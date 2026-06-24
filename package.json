@@ -1,0 +1,8 @@
+{
+  "name": "aws-account-audit",
+  "private": true,
+  "description": "Optional Mermaid CLI for aws_network_map PNG export",
+  "devDependencies": {
+    "@mermaid-js/mermaid-cli": "^11.4.2"
+  }
+}
