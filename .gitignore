@@ -2,3 +2,5 @@ node_modules/
 network-maps/
 audit-runs/
 .venv/
+__pycache__/
+*.pyc
