@@ -11,12 +11,14 @@ from typing import Any
 
 from aws_account_audit.audit import run_audit, write_report
 from aws_network_map import from_audit
+from aws_network_map.export import _render_png
 
 REQUIRED_MAP_KEYS = {"root", "region", "nodes", "edges", "ingress_paths", "errors"}
 
 
 @dataclass
 class AccountGraph:
+    account_id: str | None = None
     nodes: dict[str, dict[str, Any]] = field(default_factory=dict)
     edges: list[dict[str, Any]] = field(default_factory=list)
     ingress_paths: list[list[str]] = field(default_factory=list)
@@ -83,20 +85,8 @@ def merge_maps(maps: list[dict[str, Any]]) -> AccountGraph:
 
 
 def render_account_html(graph: AccountGraph, *, direction: str = "LR") -> str:
-    root_label = ", ".join(graph.sources) if graph.sources else "account"
-    mermaid_lines = [f"flowchart {direction}"]
-    for node in graph.nodes.values():
-        node_id = _mermaid_id(str(node.get("node_id", "")))
-        label = _escape_mermaid(str(node.get("label", node.get("node_id", "unknown"))))
-        mermaid_lines.append(f'    {node_id}["{label}"]')
-
-    for edge in graph.edges:
-        source = _mermaid_id(str(edge.get("source", "")))
-        target = _mermaid_id(str(edge.get("target", "")))
-        label = _escape_mermaid(str(edge.get("label", "")))
-        mermaid_lines.append(f'    {source} -->|"{label}"| {target}')
-
-    mermaid = "\n".join(mermaid_lines) + "\n"
+    root_label = graph.account_id or ", ".join(graph.sources) or "account"
+    mermaid = render_account_mermaid(graph, direction=direction)
     title = html.escape(f"Account graph: {root_label}")
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -125,6 +115,16 @@ def render_account_html(graph: AccountGraph, *, direction: str = "LR") -> str:
 def write_html(graph: AccountGraph, path: Path, *, direction: str = "LR") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(render_account_html(graph, direction=direction))
+
+
+def write_png(graph: AccountGraph, path: Path, *, direction: str = "LR") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    mmd_path = path.with_suffix(".mmd")
+    mmd_path.write_text(render_account_mermaid(graph, direction=direction))
+    png_ok, png_error = _render_png(mmd_path, path)
+    mmd_path.unlink(missing_ok=True)
+    if not png_ok:
+        raise RuntimeError(png_error or "PNG export failed.")
 
 
 def _load_audit_metadata(audit_json: Path) -> dict[str, Any]:
@@ -259,6 +259,7 @@ def main(argv: list[str] | None = None) -> int:
     output_base = args.output_base.with_suffix("")
     output_json = output_base.with_suffix(".json")
     output_html = output_base.with_suffix(".html")
+    output_png = output_base.with_suffix(".png")
 
     map_return_code = 0
     if not args.skip_mapping:
@@ -289,7 +290,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.dry_run:
         print(f"DRY RUN: would merge map JSON files from {args.map_dir}", file=sys.stderr)
-        print(f"DRY RUN: would write {output_json} and {output_html}", file=sys.stderr)
+        print(f"DRY RUN: would write {output_json}, {output_html}, and {output_png}", file=sys.stderr)
         return 0
 
     if not args.map_dir.exists():
@@ -310,6 +311,7 @@ def main(argv: list[str] | None = None) -> int:
     merged = merge_maps(payloads)
     summary = merged.summary()
     account_id = str(audit_metadata.get("account_id") or "unknown-account")
+    merged.account_id = account_id
     output_payload = {
         "domain": f"account:{account_id}",
         "account_id": account_id,
@@ -324,9 +326,11 @@ def main(argv: list[str] | None = None) -> int:
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_json.write_text(json.dumps(output_payload, indent=2))
     write_html(merged, output_html, direction=args.direction)
+    write_png(merged, output_png, direction=args.direction)
 
     print(f"Wrote merged graph JSON: {output_json}", file=sys.stderr)
     print(f"Wrote merged graph HTML: {output_html}", file=sys.stderr)
+    print(f"Wrote merged graph PNG: {output_png}", file=sys.stderr)
     print(
         f"Merged {len(payloads)} map file(s): {summary['node_count']} nodes, {summary['edge_count']} edges",
         file=sys.stderr,
@@ -352,6 +356,22 @@ def _escape_mermaid(value: str) -> str:
     escaped = escaped.replace("[", "(").replace("]", ")")
     escaped = escaped.replace("\n", " ").replace("\r", " ")
     return escaped
+
+
+def render_account_mermaid(graph: AccountGraph, *, direction: str = "LR") -> str:
+    mermaid_lines = [f"flowchart {direction}"]
+    for node in graph.nodes.values():
+        node_id = _mermaid_id(str(node.get("node_id", "")))
+        label = _escape_mermaid(str(node.get("label", node.get("node_id", "unknown"))))
+        mermaid_lines.append(f'    {node_id}["{label}"]')
+
+    for edge in graph.edges:
+        source = _mermaid_id(str(edge.get("source", "")))
+        target = _mermaid_id(str(edge.get("target", "")))
+        label = _escape_mermaid(str(edge.get("label", "")))
+        mermaid_lines.append(f'    {source} -->|"{label}"| {target}')
+
+    return "\n".join(mermaid_lines) + "\n"
 
 
 if __name__ == "__main__":
