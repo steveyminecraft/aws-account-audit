@@ -124,6 +124,17 @@ python -m aws_network_map --resource i-abc123 --format json --output map.json
 python -m aws_network_map.from_audit \
   --audit-json ./audit-runs/audit-123456789012-2026-06-24T151351+0000.json \
   --output-dir ./network-maps/from-audit
+
+# Account-wide merged graph (fresh audit -> map loop -> single JSON+HTML graph)
+python -m aws_network_map.account_graph \
+  --run-audit \
+  --output-base ./network-maps/account-graph
+
+# Account-wide merged graph from an existing audit report
+python -m aws_network_map.account_graph \
+  --audit-json ./audit-runs/audit-123456789012-2026-06-24T151351+0000.json \
+  --map-dir ./network-maps/from-audit \
+  --output-base ./network-maps/account-graph-from-report
 ```
 
 Default `export` writes four companion files from the same base name:
