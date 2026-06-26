@@ -119,6 +119,11 @@ python -m aws_network_map --resource sg-abc123 --output ./network-maps/my-resour
 # Single-format output to stdout or one file
 python -m aws_network_map --resource i-abc123 --format html --output map.html
 python -m aws_network_map --resource i-abc123 --format json --output map.json
+
+# Loop from audit output (maps every open SG target found in report)
+python -m aws_network_map.from_audit \
+  --audit-json ./audit-runs/audit-123456789012-2026-06-24T151351+0000.json \
+  --output-dir ./network-maps/from-audit
 ```
 
 Default `export` writes four companion files from the same base name:
