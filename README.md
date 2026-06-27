@@ -135,6 +135,20 @@ python -m aws_network_map.account_graph \
   --audit-json ./audit-runs/audit-123456789012-2026-06-24T151351+0000.json \
   --map-dir ./network-maps/from-audit \
   --output-base ./network-maps/account-graph-from-report
+
+# Account-wide merged graph from existing map JSON files only (no re-mapping)
+python -m aws_network_map.account_graph \
+  --audit-json ./audit-runs/audit-123456789012-2026-06-24T151351+0000.json \
+  --map-dir ./network-maps/from-account-current \
+  --output-base ./network-maps/account-graph-current \
+  --skip-mapping
+
+# Account-wide merged graph with explicit profile and regions
+python -m aws_network_map.account_graph \
+  --run-audit \
+  --profile my-profile \
+  --regions us-east-1 us-east-2 \
+  --output-base ./network-maps/account-graph-us
 ```
 
 Default `export` writes four companion files from the same base name:
@@ -170,4 +184,43 @@ flowchart LR
 ### Permissions
 
 Read-only EC2, ELBv2, RDS, and Lambda APIs in the target region(s).
+
+## Command Combinations
+
+### `aws_account_audit`
+
+- Full account scan: `python -m aws_account_audit --output-dir ./audit-runs`
+- One region only: `python -m aws_account_audit --no-all-regions --region eu-west-1`
+- Explicit regions: `python -m aws_account_audit --regions eu-west-1 us-east-2`
+- Section-limited scan: `python -m aws_account_audit --sections identity iam security_services`
+
+### `aws_network_map`
+
+- One resource map export: `python -m aws_network_map --resource sg-abc123 --region us-east-2 --output-dir ./network-maps`
+- One resource JSON only: `python -m aws_network_map --resource i-abc123 --format json --output map.json`
+- Force type: `python -m aws_network_map --resource my-public-alb --type alb --region us-east-2`
+
+### `aws_network_map.from_audit`
+
+- Default loop from audit findings: `python -m aws_network_map.from_audit --audit-json ./audit-runs/<audit-file>.json --output-dir ./network-maps/from-audit`
+- Profile + region filter: `python -m aws_network_map.from_audit --audit-json ./audit-runs/<audit-file>.json --profile my-profile --regions us-east-2`
+- Dry run: `python -m aws_network_map.from_audit --audit-json ./audit-runs/<audit-file>.json --dry-run`
+
+### `aws_network_map.account_graph`
+
+- Full pipeline (audit -> map loop -> merged outputs): `python -m aws_network_map.account_graph --run-audit --output-base ./network-maps/account-graph`
+- Use existing audit report: `python -m aws_network_map.account_graph --audit-json ./audit-runs/<audit-file>.json --map-dir ./network-maps/from-audit --output-base ./network-maps/account-graph-from-report`
+- Merge existing map JSON only: `python -m aws_network_map.account_graph --audit-json ./audit-runs/<audit-file>.json --map-dir ./network-maps/from-account-current --output-base ./network-maps/account-graph-current --skip-mapping`
+- Dry run: `python -m aws_network_map.account_graph --run-audit --dry-run`
+
+`aws_network_map.account_graph` writes:
+
+- `<output-base>.json` (merged graph data)
+- `<output-base>.html` (interactive Mermaid view)
+- `<output-base>.png` (rendered diagram image)
+
+### Notes
+
+- If `from_audit` reports "No security group targets found in report", there may be no current open-SG findings to map.
+- In that case, you can still generate account graphs by mapping known resources directly with `aws_network_map` and then running `account_graph --audit-json <path> --map-dir <dir> --output-base <base> --skip-mapping`.
 
