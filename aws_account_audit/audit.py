@@ -87,10 +87,7 @@ def run_audit(
                 jobs.append((key, collector, (session, scan_region)))
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(collector, *args): label
-            for label, collector, args in jobs
-        }
+        futures = {executor.submit(collector, *args): label for label, collector, args in jobs}
         for future in as_completed(futures):
             report.sections.append(future.result())
 

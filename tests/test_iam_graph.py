@@ -36,6 +36,7 @@ Proposed public API
   write_iam_html(graph: IamGraph, path: Path, *, direction: str = "LR") -> None
       Writes render_iam_html output to *path*, creating parent directories.
 """
+
 from __future__ import annotations
 
 import json
@@ -49,6 +50,7 @@ from aws_account_audit import iam_graph as ig
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
+
 
 def _make_iam_data(
     *,
@@ -86,6 +88,7 @@ def _role(name: str, arn: str | None = None) -> dict:
 # build_iam_graph – empty / minimal input
 # ---------------------------------------------------------------------------
 
+
 class TestBuildIamGraphEmpty(unittest.TestCase):
     def test_empty_data_returns_graph(self) -> None:
         """build_iam_graph({}) returns an IamGraph without raising."""
@@ -117,6 +120,7 @@ class TestBuildIamGraphEmpty(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # build_iam_graph – node creation
 # ---------------------------------------------------------------------------
+
 
 class TestBuildIamGraphNodes(unittest.TestCase):
     def setUp(self) -> None:
@@ -176,6 +180,7 @@ class TestBuildIamGraphNodes(unittest.TestCase):
 # build_iam_graph – admin edges
 # ---------------------------------------------------------------------------
 
+
 class TestBuildIamGraphAdminEdges(unittest.TestCase):
     def setUp(self) -> None:
         self.data = _make_iam_data(
@@ -194,56 +199,56 @@ class TestBuildIamGraphAdminEdges(unittest.TestCase):
 
     def test_admin_policy_node_kind(self) -> None:
         """The AdministratorAccess policy node has kind='policy'."""
-        self.assertEqual(
-            self.graph.nodes["policy:AdministratorAccess"]["kind"], "policy"
-        )
+        self.assertEqual(self.graph.nodes["policy:AdministratorAccess"]["kind"], "policy")
 
     def test_admin_user_edge_created(self) -> None:
         """An edge from the admin user to policy:AdministratorAccess is created."""
-        sources = [e["source"] for e in self.graph.edges
-                   if e["target"] == "policy:AdministratorAccess"]
+        sources = [
+            e["source"] for e in self.graph.edges if e["target"] == "policy:AdministratorAccess"
+        ]
         self.assertIn("user:alice", sources)
 
     def test_non_admin_user_has_no_admin_edge(self) -> None:
         """Non-admin user bob has no edge to the admin policy node."""
-        sources = [e["source"] for e in self.graph.edges
-                   if e["target"] == "policy:AdministratorAccess"]
+        sources = [
+            e["source"] for e in self.graph.edges if e["target"] == "policy:AdministratorAccess"
+        ]
         self.assertNotIn("user:bob", sources)
 
     def test_admin_group_edge_created(self) -> None:
         """An edge from the admin group to policy:AdministratorAccess is created."""
-        sources = [e["source"] for e in self.graph.edges
-                   if e["target"] == "policy:AdministratorAccess"]
+        sources = [
+            e["source"] for e in self.graph.edges if e["target"] == "policy:AdministratorAccess"
+        ]
         self.assertIn("group:admins", sources)
 
     def test_admin_role_edge_created(self) -> None:
         """An edge from the admin role to policy:AdministratorAccess is created."""
-        sources = [e["source"] for e in self.graph.edges
-                   if e["target"] == "policy:AdministratorAccess"]
+        sources = [
+            e["source"] for e in self.graph.edges if e["target"] == "policy:AdministratorAccess"
+        ]
         self.assertIn("role:BreakGlass", sources)
 
     def test_admin_edge_label(self) -> None:
         """Each admin edge carries label='admin'."""
-        admin_edges = [e for e in self.graph.edges
-                       if e["target"] == "policy:AdministratorAccess"]
+        admin_edges = [e for e in self.graph.edges if e["target"] == "policy:AdministratorAccess"]
         self.assertTrue(all(e["label"] == "admin" for e in admin_edges))
 
     def test_admin_edge_type(self) -> None:
         """Each admin edge carries edge_type='attached_to'."""
-        admin_edges = [e for e in self.graph.edges
-                       if e["target"] == "policy:AdministratorAccess"]
+        admin_edges = [e for e in self.graph.edges if e["target"] == "policy:AdministratorAccess"]
         self.assertTrue(all(e["edge_type"] == "attached_to" for e in admin_edges))
 
     def test_admin_edge_count_matches_admin_principal_count(self) -> None:
         """Exactly one edge per known admin principal (1 user + 1 group + 1 role = 3)."""
-        admin_edges = [e for e in self.graph.edges
-                       if e["target"] == "policy:AdministratorAccess"]
+        admin_edges = [e for e in self.graph.edges if e["target"] == "policy:AdministratorAccess"]
         self.assertEqual(len(admin_edges), 3)
 
 
 # ---------------------------------------------------------------------------
 # build_iam_graph – edge cases and error handling
 # ---------------------------------------------------------------------------
+
 
 class TestBuildIamGraphEdgeCases(unittest.TestCase):
     def test_unknown_admin_user_recorded_in_errors(self) -> None:
@@ -280,9 +285,11 @@ class TestBuildIamGraphEdgeCases(unittest.TestCase):
             admin_users=["alice", "alice"],
         )
         graph = ig.build_iam_graph(data)
-        matching = [e for e in graph.edges
-                    if e["source"] == "user:alice"
-                    and e["target"] == "policy:AdministratorAccess"]
+        matching = [
+            e
+            for e in graph.edges
+            if e["source"] == "user:alice" and e["target"] == "policy:AdministratorAccess"
+        ]
         self.assertEqual(len(matching), 1)
 
     def test_user_with_no_arn_field_still_creates_node(self) -> None:
@@ -319,6 +326,7 @@ class TestBuildIamGraphEdgeCases(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # IamGraph – summary()
 # ---------------------------------------------------------------------------
+
 
 class TestIamGraphSummary(unittest.TestCase):
     def setUp(self) -> None:
@@ -380,14 +388,22 @@ class TestIamGraphSummary(unittest.TestCase):
         """summary() on an empty graph returns all-zero counts."""
         graph = ig.build_iam_graph({})
         s = graph.summary()
-        for key in ("node_count", "edge_count", "error_count",
-                    "user_count", "group_count", "role_count", "policy_count"):
+        for key in (
+            "node_count",
+            "edge_count",
+            "error_count",
+            "user_count",
+            "group_count",
+            "role_count",
+            "policy_count",
+        ):
             self.assertEqual(s[key], 0, msg=f"{key} should be 0")
 
 
 # ---------------------------------------------------------------------------
 # render_iam_mermaid
 # ---------------------------------------------------------------------------
+
 
 class TestRenderIamMermaid(unittest.TestCase):
     def setUp(self) -> None:
@@ -435,10 +451,7 @@ class TestRenderIamMermaid(unittest.TestCase):
         mmd = ig.render_iam_mermaid(graph)
         # The node declaration line must not expose a raw colon inside [] or ()
         # (Mermaid node IDs must be identifier-safe).
-        node_decl_lines = [
-            line for line in mmd.splitlines()
-            if "[" in line or "(" in line
-        ]
+        node_decl_lines = [line for line in mmd.splitlines() if "[" in line or "(" in line]
         for line in node_decl_lines:
             node_id_part = line.strip().split("[")[0].split("(")[0]
             self.assertNotIn(":", node_id_part)
@@ -447,6 +460,7 @@ class TestRenderIamMermaid(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # render_iam_html
 # ---------------------------------------------------------------------------
+
 
 class TestRenderIamHtml(unittest.TestCase):
     def setUp(self) -> None:
@@ -498,6 +512,7 @@ class TestRenderIamHtml(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # write_iam_html
 # ---------------------------------------------------------------------------
+
 
 class TestWriteIamHtml(unittest.TestCase):
     def _graph(self) -> ig.IamGraph:

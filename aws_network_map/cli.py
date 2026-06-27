@@ -7,7 +7,13 @@ from pathlib import Path
 from aws_account_audit.session import create_session
 from aws_network_map import __version__
 from aws_network_map.export import PngExportError, default_export_base, export_network_map
-from aws_network_map.render import render_html, render_json, render_markdown, render_mermaid, render_text
+from aws_network_map.render import (
+    render_html,
+    render_json,
+    render_markdown,
+    render_mermaid,
+    render_text,
+)
 from aws_network_map.resolve import resolve_resource
 from aws_network_map.tracers import build_graph
 
@@ -145,8 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     if graph.errors:
         print(f"Completed with {len(graph.errors)} warning(s).", file=sys.stderr)
     print(
-        f"Mapped {resolved.kind} {resolved.resource_id} in {resolved.region} "
-        f"(tool v{__version__})",
+        f"Mapped {resolved.kind} {resolved.resource_id} in {resolved.region} (tool v{__version__})",
         file=sys.stderr,
     )
     return 0

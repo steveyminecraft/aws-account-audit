@@ -45,11 +45,7 @@ class AuditReport:
     sections: list[SectionResult] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        findings = [
-            finding.to_dict()
-            for section in self.sections
-            for finding in section.findings
-        ]
+        findings = [finding.to_dict() for section in self.sections for finding in section.findings]
         resource_count = sum(
             section.data.get("count", 0)
             for section in self.sections

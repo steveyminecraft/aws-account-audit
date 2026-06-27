@@ -98,7 +98,9 @@ def trace_security_group_ingress(
             source_sg_id = source_sg.get("GroupId")
             if not source_sg_id or source_sg_id == security_group_id:
                 continue
-            source_node_id = _trace_source_security_group(session, graph, region, source_sg_id, ec2=ec2)
+            source_node_id = _trace_source_security_group(
+                session, graph, region, source_sg_id, ec2=ec2
+            )
             graph.add_edge(Edge(source_node_id, sg_node_id, label, "ingress"))
             _append_path(graph, [source_node_id, sg_node_id, target_node_id])
 
@@ -155,12 +157,18 @@ def trace_security_group_egress(
             if dest_node_id not in graph.nodes:
                 dest_response, _ = safe_call(
                     f"ec2.describe_security_groups({dest_sg_id})",
-                    lambda dest_sg_id=dest_sg_id: ec2.describe_security_groups(GroupIds=[dest_sg_id]),
+                    lambda dest_sg_id=dest_sg_id: ec2.describe_security_groups(
+                        GroupIds=[dest_sg_id]
+                    ),
                 )
                 dest_name = dest_sg_id
                 if dest_response and dest_response.get("SecurityGroups"):
                     dest_name = dest_response["SecurityGroups"][0].get("GroupName", dest_sg_id)
-                graph.add_node(Node(dest_node_id, "security_group", f"SG {dest_name}", {"group_id": dest_sg_id}))
+                graph.add_node(
+                    Node(
+                        dest_node_id, "security_group", f"SG {dest_name}", {"group_id": dest_sg_id}
+                    )
+                )
             graph.add_edge(Edge(source_node_id, sg_node_id, "uses", "attach"))
             graph.add_edge(Edge(sg_node_id, dest_node_id, label, "egress"))
 
@@ -211,7 +219,9 @@ def trace_subnet_path(
         graph.add_node(Node(vpc_node_id, "vpc", f"VPC {vpc_id}", {"vpc_id": vpc_id}))
         graph.add_edge(Edge(vpc_node_id, subnet_node_id, "contains", "attach"))
 
-    _trace_route_table(session, graph, region, subnet_id, subnet_node_id, subnet.get("VpcId"), ec2=ec2)
+    _trace_route_table(
+        session, graph, region, subnet_id, subnet_node_id, subnet.get("VpcId"), ec2=ec2
+    )
     _trace_nacl(session, graph, region, subnet.get("NetworkAclId"), subnet_node_id, ec2=ec2)
 
 
@@ -254,7 +264,9 @@ def _trace_route_table(
     for route_table in route_tables:
         rt_id = route_table["RouteTableId"]
         rt_node_id = node_id("route_table", rt_id)
-        graph.add_node(Node(rt_node_id, "route_table", f"Route table {rt_id}", {"route_table_id": rt_id}))
+        graph.add_node(
+            Node(rt_node_id, "route_table", f"Route table {rt_id}", {"route_table_id": rt_id})
+        )
         graph.add_edge(Edge(rt_node_id, subnet_node_id, "routes", "attach"))
 
         internet_id = add_internet_node(graph)
@@ -269,7 +281,9 @@ def _trace_route_table(
             elif route.get("NatGatewayId", "").startswith("nat-"):
                 nat_id = route["NatGatewayId"]
                 nat_node_id = node_id("nat", nat_id)
-                graph.add_node(Node(nat_node_id, "nat", f"NAT {nat_id}", {"nat_gateway_id": nat_id}))
+                graph.add_node(
+                    Node(nat_node_id, "nat", f"NAT {nat_id}", {"nat_gateway_id": nat_id})
+                )
                 graph.add_edge(Edge(nat_node_id, rt_node_id, destination or "default", "route"))
 
 
@@ -338,7 +352,9 @@ def _trace_source_security_group(
     )
     if sg_error:
         graph.errors.append(sg_error)
-        graph.add_node(Node(sg_node_id, "security_group", security_group_id, {"group_id": security_group_id}))
+        graph.add_node(
+            Node(sg_node_id, "security_group", security_group_id, {"group_id": security_group_id})
+        )
         return sg_node_id
 
     sg = (sg_response or {}).get("SecurityGroups", [{}])[0]
@@ -407,7 +423,9 @@ def find_load_balancers_for_instance(
     target_node_id: str,
 ) -> None:
     elbv2 = client(session, "elbv2", region)
-    tg_response, tg_error = safe_call("elbv2.describe_target_groups", lambda: elbv2.describe_target_groups())
+    tg_response, tg_error = safe_call(
+        "elbv2.describe_target_groups", lambda: elbv2.describe_target_groups()
+    )
     if tg_error:
         graph.errors.append(tg_error)
         return
@@ -431,7 +449,9 @@ def find_load_balancers_for_instance(
     if not matching_target_groups:
         return
 
-    lb_response, lb_error = safe_call("elbv2.describe_load_balancers", lambda: elbv2.describe_load_balancers())
+    lb_response, lb_error = safe_call(
+        "elbv2.describe_load_balancers", lambda: elbv2.describe_load_balancers()
+    )
     if lb_error:
         graph.errors.append(lb_error)
         return
@@ -461,7 +481,11 @@ def find_load_balancers_for_instance(
                 continue
 
             tg_meta = next(
-                (item for item in (tg_response or {}).get("TargetGroups", []) if item["TargetGroupArn"] == tg_arn),
+                (
+                    item
+                    for item in (tg_response or {}).get("TargetGroups", [])
+                    if item["TargetGroupArn"] == tg_arn
+                ),
                 {},
             )
             tg_node_id = node_id("target_group", tg_arn)

@@ -47,9 +47,9 @@ def build_iam_graph(iam_data: dict[str, Any]) -> IamGraph:
     groups = iam_data.get("groups", []) or []
     roles = iam_data.get("roles", []) or []
 
-    user_ids = _add_principal_nodes(graph, users, "user")
-    group_ids = _add_principal_nodes(graph, groups, "group")
-    role_ids = _add_principal_nodes(graph, roles, "role")
+    _add_principal_nodes(graph, users, "user")
+    _add_principal_nodes(graph, groups, "group")
+    _add_principal_nodes(graph, roles, "role")
 
     admin_sources: list[tuple[str, str]] = []
     admin_sources.extend(("user", name) for name in iam_data.get("admin_users", []) or [])
@@ -69,7 +69,9 @@ def build_iam_graph(iam_data: dict[str, Any]) -> IamGraph:
         if source_node_id not in graph.nodes:
             graph.errors.append(f"Unknown admin {kind}: {name}")
             continue
-        _add_edge(graph, source_node_id, "policy:AdministratorAccess", "admin", "attached_to", seen_edges)
+        _add_edge(
+            graph, source_node_id, "policy:AdministratorAccess", "admin", "attached_to", seen_edges
+        )
 
     for member in iam_data.get("user_group_memberships", []) or []:
         user_name = member.get("user")
@@ -82,7 +84,9 @@ def build_iam_graph(iam_data: dict[str, Any]) -> IamGraph:
             _add_edge(graph, src, dst, "member", "member_of", seen_edges)
 
     _add_managed_policy_edges(graph, iam_data.get("user_attached_policies", {}), "user", seen_edges)
-    _add_managed_policy_edges(graph, iam_data.get("group_attached_policies", {}), "group", seen_edges)
+    _add_managed_policy_edges(
+        graph, iam_data.get("group_attached_policies", {}), "group", seen_edges
+    )
     _add_managed_policy_edges(graph, iam_data.get("role_attached_policies", {}), "role", seen_edges)
 
     _add_inline_policy_edges(graph, iam_data.get("user_inline_policies", {}), "user", seen_edges)
@@ -183,12 +187,18 @@ def write_iam_png(graph: IamGraph, path: Path, *, direction: str = "LR") -> None
         raise RuntimeError(png_error or "PNG export failed.")
 
 
-def collect_iam_relationship_data(*, profile: str | None = None, region: str = "eu-west-1") -> dict[str, Any]:
+def collect_iam_relationship_data(
+    *, profile: str | None = None, region: str = "eu-west-1"
+) -> dict[str, Any]:
     session = create_session(profile)
     iam = client(session, "iam", region)
-    identity, identity_error = safe_call("sts.get_caller_identity", lambda: caller_identity(session, region))
+    identity, identity_error = safe_call(
+        "sts.get_caller_identity", lambda: caller_identity(session, region)
+    )
     users, users_error = safe_call("iam.list_users", lambda: _paginate(iam.list_users, "Users"))
-    groups, groups_error = safe_call("iam.list_groups", lambda: _paginate(iam.list_groups, "Groups"))
+    groups, groups_error = safe_call(
+        "iam.list_groups", lambda: _paginate(iam.list_groups, "Groups")
+    )
     roles, roles_error = safe_call("iam.list_roles", lambda: _paginate(iam.list_roles, "Roles"))
 
     errors = [err for err in [identity_error, users_error, groups_error, roles_error] if err]
@@ -196,9 +206,17 @@ def collect_iam_relationship_data(*, profile: str | None = None, region: str = "
     groups = groups or []
     roles = roles or []
 
-    user_summaries = [{"name": u.get("UserName", ""), "arn": u.get("Arn", "")} for u in users if u.get("UserName")]
-    group_summaries = [{"name": g.get("GroupName", ""), "arn": g.get("Arn", "")} for g in groups if g.get("GroupName")]
-    role_summaries = [{"name": r.get("RoleName", ""), "arn": r.get("Arn", "")} for r in roles if r.get("RoleName")]
+    user_summaries = [
+        {"name": u.get("UserName", ""), "arn": u.get("Arn", "")} for u in users if u.get("UserName")
+    ]
+    group_summaries = [
+        {"name": g.get("GroupName", ""), "arn": g.get("Arn", "")}
+        for g in groups
+        if g.get("GroupName")
+    ]
+    role_summaries = [
+        {"name": r.get("RoleName", ""), "arn": r.get("Arn", "")} for r in roles if r.get("RoleName")
+    ]
 
     data: dict[str, Any] = {
         "account_id": (identity or {}).get("Account"),
@@ -318,7 +336,9 @@ def collect_iam_relationship_data(*, profile: str | None = None, region: str = "
         data["role_inline_policies"][role_name] = inline or []
 
         assume_doc = _role_assume_policy_for(role_name, roles)
-        data["role_trust_principals"][role_name] = sorted(_extract_principals_from_assume_doc(assume_doc))
+        data["role_trust_principals"][role_name] = sorted(
+            _extract_principals_from_assume_doc(assume_doc)
+        )
 
     data["errors"] = errors
     return data
@@ -327,8 +347,12 @@ def collect_iam_relationship_data(*, profile: str | None = None, region: str = "
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generate IAM relationship graph outputs.")
     parser.add_argument("--profile", help="AWS profile name")
-    parser.add_argument("--region", default="eu-west-1", help="Home region (for STS identity lookup)")
-    parser.add_argument("--direction", choices=["LR", "TB"], default="LR", help="Mermaid diagram direction")
+    parser.add_argument(
+        "--region", default="eu-west-1", help="Home region (for STS identity lookup)"
+    )
+    parser.add_argument(
+        "--direction", choices=["LR", "TB"], default="LR", help="Mermaid diagram direction"
+    )
     parser.add_argument(
         "--output-base",
         type=Path,
@@ -366,10 +390,15 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _add_principal_nodes(graph: IamGraph, principals: list[dict[str, Any]], kind: str) -> set[str]:
-    node_ids: set[str] = set()
+def _add_principal_nodes(graph: IamGraph, principals: list[dict[str, Any]], kind: str) -> None:
     for principal in principals:
-        name = str(principal.get("name") or principal.get("UserName") or principal.get("GroupName") or principal.get("RoleName") or "")
+        name = str(
+            principal.get("name")
+            or principal.get("UserName")
+            or principal.get("GroupName")
+            or principal.get("RoleName")
+            or ""
+        )
         if not name:
             continue
         node_id = f"{kind}:{name}"
@@ -379,8 +408,6 @@ def _add_principal_nodes(graph: IamGraph, principals: list[dict[str, Any]], kind
             "label": f"{kind.capitalize()} {name}",
             "metadata": {"arn": principal.get("arn") or principal.get("Arn")},
         }
-        node_ids.add(node_id)
-    return node_ids
 
 
 def _add_policy_node(graph: IamGraph, node_id: str, label: str, metadata: dict[str, Any]) -> None:
@@ -463,7 +490,12 @@ def _add_inline_policy_edges(
                 graph,
                 policy_node,
                 f"{policy_name} (inline)",
-                {"managed": False, "inline": True, "owner": principal_name, "owner_kind": principal_kind},
+                {
+                    "managed": False,
+                    "inline": True,
+                    "owner": principal_name,
+                    "owner_kind": principal_kind,
+                },
             )
             _add_edge(graph, principal_node, policy_node, "inline", "inline_policy", seen_edges)
 

@@ -30,6 +30,7 @@ Proposed public API
   write_html(graph: AccountGraph, path: Path, *, direction: str = "LR") -> None
       Writes render_account_html output to *path*, creating parent dirs.
 """
+
 from __future__ import annotations
 
 import json
@@ -44,6 +45,7 @@ from aws_network_map import account_graph as ag
 # Shared fixtures
 # ---------------------------------------------------------------------------
 
+
 def _make_map(
     root: str = "sg-aaa111",
     region: str = "us-east-1",
@@ -55,22 +57,35 @@ def _make_map(
 ) -> dict:
     """Build a minimal map dict in the shape produced by NetworkGraph.to_dict()."""
     base_nodes = [
-        {"node_id": f"security_group:{root}", "kind": "security_group",
-         "label": f"SG {root}", "metadata": {"group_id": root}},
-        {"node_id": "internet:0_0_0_0_0", "kind": "internet",
-         "label": "Internet (0.0.0.0/0)", "metadata": {}},
+        {
+            "node_id": f"security_group:{root}",
+            "kind": "security_group",
+            "label": f"SG {root}",
+            "metadata": {"group_id": root},
+        },
+        {
+            "node_id": "internet:0_0_0_0_0",
+            "kind": "internet",
+            "label": "Internet (0.0.0.0/0)",
+            "metadata": {},
+        },
     ]
     base_edges = [
-        {"source": "internet:0_0_0_0_0", "target": f"security_group:{root}",
-         "label": "tcp/22-22", "edge_type": "ingress"},
+        {
+            "source": "internet:0_0_0_0_0",
+            "target": f"security_group:{root}",
+            "label": "tcp/22-22",
+            "edge_type": "ingress",
+        },
     ]
     return {
         "root": root,
         "region": region,
         "nodes": base_nodes + (extra_nodes or []),
         "edges": base_edges + (extra_edges or []),
-        "ingress_paths": ingress_paths if ingress_paths is not None
-                         else [["internet:0_0_0_0_0", f"security_group:{root}"]],
+        "ingress_paths": ingress_paths
+        if ingress_paths is not None
+        else [["internet:0_0_0_0_0", f"security_group:{root}"]],
         "errors": errors or [],
     }
 
@@ -78,6 +93,7 @@ def _make_map(
 # ---------------------------------------------------------------------------
 # load_map_json
 # ---------------------------------------------------------------------------
+
 
 class TestLoadMapJson(unittest.TestCase):
     def _write(self, tmp: Path, data: object) -> Path:
@@ -141,6 +157,7 @@ class TestLoadMapJson(unittest.TestCase):
 # merge_maps – structural correctness
 # ---------------------------------------------------------------------------
 
+
 class TestMergeMapsEmpty(unittest.TestCase):
     def test_merge_maps_empty_list_returns_empty_graph(self) -> None:
         """Merging an empty list yields an AccountGraph with no nodes, edges, or paths."""
@@ -197,22 +214,28 @@ class TestMergeMapsDedupliation(unittest.TestCase):
 
     def test_total_node_count_after_dedup(self) -> None:
         """Node count = union of unique node_ids across both maps."""
-        all_ids = {n["node_id"] for n in self.map_a["nodes"]} | {n["node_id"] for n in self.map_b["nodes"]}
+        all_ids = {n["node_id"] for n in self.map_a["nodes"]} | {
+            n["node_id"] for n in self.map_b["nodes"]
+        }
         self.assertEqual(len(self.graph.nodes), len(all_ids))
 
     def test_duplicate_edge_deduplicated(self) -> None:
         """An identical edge (same source, target, label) appearing in two maps is stored once."""
         # Both maps emit internet -> their SG with label tcp/22-22.
         # They have different targets so no literal duplicate here; fabricate one.
-        shared_edge = {"source": "internet:0_0_0_0_0",
-                        "target": "security_group:sg-aaa111",
-                        "label": "tcp/22-22", "edge_type": "ingress"}
+        shared_edge = {
+            "source": "internet:0_0_0_0_0",
+            "target": "security_group:sg-aaa111",
+            "label": "tcp/22-22",
+            "edge_type": "ingress",
+        }
         dupe_map = _make_map(root="sg-aaa111")
         dupe_map["edges"] = [shared_edge, shared_edge]  # explicit duplicate
         graph = ag.merge_maps([dupe_map])
         # Expect only one copy of the edge.
         matching = [
-            e for e in graph.edges
+            e
+            for e in graph.edges
             if e["source"] == "internet:0_0_0_0_0"
             and e["target"] == "security_group:sg-aaa111"
             and e["label"] == "tcp/22-22"
@@ -225,9 +248,9 @@ class TestMergeMapsDedupliation(unittest.TestCase):
         # by reusing map_a twice.
         graph = ag.merge_maps([self.map_a, self.map_a])
         matching = [
-            e for e in graph.edges
-            if e["source"] == "internet:0_0_0_0_0"
-            and e["target"] == "security_group:sg-aaa111"
+            e
+            for e in graph.edges
+            if e["source"] == "internet:0_0_0_0_0" and e["target"] == "security_group:sg-aaa111"
         ]
         self.assertEqual(len(matching), 1)
 
@@ -235,10 +258,12 @@ class TestMergeMapsDedupliation(unittest.TestCase):
 class TestMergeMapsAggregation(unittest.TestCase):
     def test_ingress_paths_from_all_maps_concatenated(self) -> None:
         """Ingress paths from every source map accumulate in the merged graph."""
-        map_a = _make_map(root="sg-aaa111",
-                          ingress_paths=[["internet:0_0_0_0_0", "security_group:sg-aaa111"]])
-        map_b = _make_map(root="sg-bbb222",
-                          ingress_paths=[["internet:0_0_0_0_0", "security_group:sg-bbb222"]])
+        map_a = _make_map(
+            root="sg-aaa111", ingress_paths=[["internet:0_0_0_0_0", "security_group:sg-aaa111"]]
+        )
+        map_b = _make_map(
+            root="sg-bbb222", ingress_paths=[["internet:0_0_0_0_0", "security_group:sg-bbb222"]]
+        )
         graph = ag.merge_maps([map_a, map_b])
         self.assertIn(["internet:0_0_0_0_0", "security_group:sg-aaa111"], graph.ingress_paths)
         self.assertIn(["internet:0_0_0_0_0", "security_group:sg-bbb222"], graph.ingress_paths)
@@ -269,6 +294,7 @@ class TestMergeMapsAggregation(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # AccountGraph – summary()
 # ---------------------------------------------------------------------------
+
 
 class TestAccountGraphSummary(unittest.TestCase):
     def setUp(self) -> None:
@@ -315,6 +341,7 @@ class TestAccountGraphSummary(unittest.TestCase):
 # render_account_html
 # ---------------------------------------------------------------------------
 
+
 class TestRenderAccountHtml(unittest.TestCase):
     def setUp(self) -> None:
         self.graph = ag.merge_maps([_make_map(root="sg-aaa111", region="us-east-1")])
@@ -360,6 +387,7 @@ class TestRenderAccountHtml(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # write_html
 # ---------------------------------------------------------------------------
+
 
 class TestWriteHtml(unittest.TestCase):
     def test_write_html_creates_file(self) -> None:

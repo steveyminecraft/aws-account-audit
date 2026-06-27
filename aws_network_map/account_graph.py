@@ -286,11 +286,15 @@ def main(argv: list[str] | None = None) -> int:
 
         map_return_code = from_audit.main(map_argv)
         if map_return_code != 0 and not args.dry_run:
-            print("Warning: from_audit returned non-zero; attempting merge anyway.", file=sys.stderr)
+            print(
+                "Warning: from_audit returned non-zero; attempting merge anyway.", file=sys.stderr
+            )
 
     if args.dry_run:
         print(f"DRY RUN: would merge map JSON files from {args.map_dir}", file=sys.stderr)
-        print(f"DRY RUN: would write {output_json}, {output_html}, and {output_png}", file=sys.stderr)
+        print(
+            f"DRY RUN: would write {output_json}, {output_html}, and {output_png}", file=sys.stderr
+        )
         return 0
 
     if not args.map_dir.exists():

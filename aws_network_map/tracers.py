@@ -142,7 +142,9 @@ def trace_security_group(session: Any, resolved: ResolvedResource) -> NetworkGra
                 )
             )
             graph.add_edge(Edge(sg_node_id, instance_node_id, "protects", "attach"))
-            trace_security_group_egress(session, graph, region, resolved.resource_id, instance_node_id, ec2=ec2)
+            trace_security_group_egress(
+                session, graph, region, resolved.resource_id, instance_node_id, ec2=ec2
+            )
 
     return graph
 
@@ -198,7 +200,9 @@ def trace_load_balancer(session: Any, resolved: ResolvedResource) -> NetworkGrap
     else:
         for listener in (listener_response or {}).get("Listeners", []):
             for action in listener.get("DefaultActions", []):
-                tg_arn = (action.get("TargetGroupArn") or (action.get("ForwardConfig") or {}).get("TargetGroups", [{}])[0].get("TargetGroupArn"))
+                tg_arn = action.get("TargetGroupArn") or (action.get("ForwardConfig") or {}).get(
+                    "TargetGroups", [{}]
+                )[0].get("TargetGroupArn")
                 if not tg_arn:
                     continue
                 _attach_target_group(session, graph, region, tg_arn, lb_node_id)
@@ -254,7 +258,7 @@ def trace_rds_instance(session: Any, resolved: ResolvedResource) -> NetworkGraph
 
     subnet_group = db.get("DBSubnetGroup") or {}
     for subnet in subnet_group.get("Subnets", []):
-        subnet_id = (subnet.get("SubnetIdentifier"))
+        subnet_id = subnet.get("SubnetIdentifier")
         if subnet_id:
             trace_subnet_path(session, graph, region, subnet_id, rds_node_id)
 
@@ -298,7 +302,9 @@ def trace_lambda_function(session: Any, resolved: ResolvedResource) -> NetworkGr
     return graph
 
 
-def _attach_target_group(session: Any, graph: NetworkGraph, region: str, tg_arn: str, lb_node_id: str) -> None:
+def _attach_target_group(
+    session: Any, graph: NetworkGraph, region: str, tg_arn: str, lb_node_id: str
+) -> None:
     elbv2 = client(session, "elbv2", region)
     tg_response, tg_error = safe_call(
         "elbv2.describe_target_groups",
@@ -396,9 +402,7 @@ def _prune_orphan_nodes(graph: NetworkGraph) -> None:
         return any(value == graph.root for value in node.metadata.values())
 
     orphan_ids = [
-        node_id
-        for node_id in graph.nodes
-        if node_id not in connected and not is_focus(node_id)
+        node_id for node_id in graph.nodes if node_id not in connected and not is_focus(node_id)
     ]
-    for node_id in orphan_ids:
-        del graph.nodes[node_id]
+    for orphan_id in orphan_ids:
+        del graph.nodes[orphan_id]

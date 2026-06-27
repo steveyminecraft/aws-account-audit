@@ -2,6 +2,9 @@
   "name": "aws-account-audit",
   "private": true,
   "description": "Optional Mermaid CLI for aws_network_map PNG export",
+  "scripts": {
+    "test": "node scripts/npm-smoke-test.mjs"
+  },
   "devDependencies": {
     "@mermaid-js/mermaid-cli": "^11.4.2"
   }

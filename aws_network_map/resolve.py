@@ -20,8 +20,14 @@ RESOURCE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("ec2_instance", re.compile(r"^i-[0-9a-f]{8,17}$", re.I)),
     ("security_group", re.compile(r"^sg-[0-9a-f]{8,17}$", re.I)),
     ("network_interface", re.compile(r"^eni-[0-9a-f]{8,17}$", re.I)),
-    ("load_balancer", re.compile(r"^arn:aws:elasticloadbalancing:[^:]+:[^:]+:loadbalancer/.+$", re.I)),
-    ("target_group", re.compile(r"^arn:aws:elasticloadbalancing:[^:]+:[^:]+:targetgroup/.+$", re.I)),
+    (
+        "load_balancer",
+        re.compile(r"^arn:aws:elasticloadbalancing:[^:]+:[^:]+:loadbalancer/.+$", re.I),
+    ),
+    (
+        "target_group",
+        re.compile(r"^arn:aws:elasticloadbalancing:[^:]+:[^:]+:targetgroup/.+$", re.I),
+    ),
     ("rds_instance", re.compile(r"^arn:aws:rds:[^:]+:[^:]+:db:[^:]+$", re.I)),
     ("lambda_function", re.compile(r"^arn:aws:lambda:[^:]+:[^:]+:function:.+$", re.I)),
 ]
@@ -121,7 +127,9 @@ def _resolve_in_region(
     return None, f"Unsupported resource kind: {kind}"
 
 
-def _resolve_ec2_instance(session: Any, instance_id: str, region: str) -> tuple[ResolvedResource | None, str | None]:
+def _resolve_ec2_instance(
+    session: Any, instance_id: str, region: str
+) -> tuple[ResolvedResource | None, str | None]:
     ec2 = client(session, "ec2", region)
     response, error = safe_call(
         "ec2.describe_instances",
@@ -143,7 +151,9 @@ def _resolve_ec2_instance(session: Any, instance_id: str, region: str) -> tuple[
     ), None
 
 
-def _resolve_load_balancer(session: Any, arn: str, region: str) -> tuple[ResolvedResource | None, str | None]:
+def _resolve_load_balancer(
+    session: Any, arn: str, region: str
+) -> tuple[ResolvedResource | None, str | None]:
     elbv2 = client(session, "elbv2", region)
     response, error = safe_call(
         "elbv2.describe_load_balancers",
@@ -164,9 +174,13 @@ def _resolve_load_balancer(session: Any, arn: str, region: str) -> tuple[Resolve
     ), None
 
 
-def _resolve_load_balancer_by_name(session: Any, name: str, region: str) -> tuple[ResolvedResource | None, str | None]:
+def _resolve_load_balancer_by_name(
+    session: Any, name: str, region: str
+) -> tuple[ResolvedResource | None, str | None]:
     elbv2 = client(session, "elbv2", region)
-    response, error = safe_call("elbv2.describe_load_balancers", lambda: elbv2.describe_load_balancers())
+    response, error = safe_call(
+        "elbv2.describe_load_balancers", lambda: elbv2.describe_load_balancers()
+    )
     if error:
         return None, error
     for balancer in (response or {}).get("LoadBalancers", []):
@@ -181,7 +195,9 @@ def _resolve_load_balancer_by_name(session: Any, name: str, region: str) -> tupl
     return None, None
 
 
-def _resolve_rds(session: Any, resource: str, region: str) -> tuple[ResolvedResource | None, str | None]:
+def _resolve_rds(
+    session: Any, resource: str, region: str
+) -> tuple[ResolvedResource | None, str | None]:
     rds = client(session, "rds", region)
     identifier = resource.split(":")[-1] if resource.startswith("arn:") else resource
     response, error = safe_call(
@@ -203,7 +219,9 @@ def _resolve_rds(session: Any, resource: str, region: str) -> tuple[ResolvedReso
     ), None
 
 
-def _resolve_lambda(session: Any, arn: str, region: str) -> tuple[ResolvedResource | None, str | None]:
+def _resolve_lambda(
+    session: Any, arn: str, region: str
+) -> tuple[ResolvedResource | None, str | None]:
     lambda_client = client(session, "lambda", region)
     response, error = safe_call(
         "lambda.get_function",
@@ -221,7 +239,9 @@ def _resolve_lambda(session: Any, arn: str, region: str) -> tuple[ResolvedResour
     ), None
 
 
-def _resolve_by_name(session: Any, name: str, region: str) -> tuple[ResolvedResource | None, str | None]:
+def _resolve_by_name(
+    session: Any, name: str, region: str
+) -> tuple[ResolvedResource | None, str | None]:
     for resolver in (
         _resolve_load_balancer_by_name,
         _resolve_ec2_by_name,
@@ -233,12 +253,20 @@ def _resolve_by_name(session: Any, name: str, region: str) -> tuple[ResolvedReso
     return None, None
 
 
-def _resolve_ec2_by_name(session: Any, name: str, region: str) -> tuple[ResolvedResource | None, str | None]:
+def _resolve_ec2_by_name(
+    session: Any, name: str, region: str
+) -> tuple[ResolvedResource | None, str | None]:
     ec2 = client(session, "ec2", region)
     response, error = safe_call(
         "ec2.describe_instances",
         lambda: ec2.describe_instances(
-            Filters=[{"Name": "tag:Name", "Values": [name]}, {"Name": "instance-state-name", "Values": ["pending", "running", "stopped", "stopping"]}],
+            Filters=[
+                {"Name": "tag:Name", "Values": [name]},
+                {
+                    "Name": "instance-state-name",
+                    "Values": ["pending", "running", "stopped", "stopping"],
+                },
+            ],
         ),
     )
     if error:
@@ -254,7 +282,9 @@ def _resolve_ec2_by_name(session: Any, name: str, region: str) -> tuple[Resolved
     return None, None
 
 
-def _resolve_rds_by_name(session: Any, name: str, region: str) -> tuple[ResolvedResource | None, str | None]:
+def _resolve_rds_by_name(
+    session: Any, name: str, region: str
+) -> tuple[ResolvedResource | None, str | None]:
     return _resolve_rds(session, name, region)
 
 

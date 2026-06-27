@@ -268,3 +268,20 @@ Read-only EC2, ELBv2, RDS, and Lambda APIs in the target region(s).
 - If `from_audit` reports "No security group targets found in report", there may be no current open-SG findings to map.
 - In that case, you can still generate account graphs by mapping known resources directly with `aws_network_map` and then running `account_graph --audit-json <path> --map-dir <dir> --output-base <base> --skip-mapping`.
 
+## Linting, Build, and Tests
+
+This repo includes Python quality tooling and an npm smoke test for Mermaid CLI via CI (`.github/workflows/python-quality.yml`).
+
+Run locally:
+
+```bash
+python -m pip install -e ".[dev]"
+ruff check .
+ruff format --check .
+python -m build
+python -m compileall aws_account_audit aws_network_map tests
+pytest -q
+npm ci
+npm test
+```
+

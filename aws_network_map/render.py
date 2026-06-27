@@ -35,14 +35,14 @@ def render_mermaid(graph: NetworkGraph, *, direction: str = "LR") -> str:
         left, right = KIND_SHAPES.get(node.kind, ("[", "]"))
         label = _escape_mermaid(node.label)
         if _is_focus_node(node, root):
-            lines.append(f"    {_mermaid_id(node.node_id)}{left}\"{label}\"{right}:::root")
+            lines.append(f'    {_mermaid_id(node.node_id)}{left}"{label}"{right}:::root')
         else:
-            lines.append(f"    {_mermaid_id(node.node_id)}{left}\"{label}\"{right}")
+            lines.append(f'    {_mermaid_id(node.node_id)}{left}"{label}"{right}')
 
     for edge in graph.edges:
         edge_label = _escape_mermaid(edge.label)
         lines.append(
-            f"    {_mermaid_id(edge.source)} -->|\"{edge_label}\"| {_mermaid_id(edge.target)}"
+            f'    {_mermaid_id(edge.source)} -->|"{edge_label}"| {_mermaid_id(edge.target)}'
         )
 
     lines.extend(

@@ -8,7 +8,9 @@ from aws_account_audit.session import client, safe_call
 
 def collect_identity(session: Any, region: str) -> SectionResult:
     result = SectionResult(name="identity", status="ok")
-    identity, error = safe_call("sts.get_caller_identity", lambda: client(session, "sts", region).get_caller_identity())
+    identity, error = safe_call(
+        "sts.get_caller_identity", lambda: client(session, "sts", region).get_caller_identity()
+    )
     if error:
         result.status = "error"
         result.errors.append(error)
@@ -42,7 +44,9 @@ def collect_identity(session: Any, region: str) -> SectionResult:
     if account_id:
         block, block_error = safe_call(
             "s3control.get_public_access_block",
-            lambda: client(session, "s3control", region).get_public_access_block(AccountId=account_id),
+            lambda: client(session, "s3control", region).get_public_access_block(
+                AccountId=account_id
+            ),
             not_found_ok=True,
         )
         if block_error:
@@ -67,7 +71,9 @@ def collect_iam(session: Any, region: str) -> SectionResult:
     result = SectionResult(name="iam", status="ok")
 
     users, users_error = safe_call("iam.list_users", lambda: _paginate(iam.list_users, "Users"))
-    groups, groups_error = safe_call("iam.list_groups", lambda: _paginate(iam.list_groups, "Groups"))
+    groups, groups_error = safe_call(
+        "iam.list_groups", lambda: _paginate(iam.list_groups, "Groups")
+    )
     roles, roles_error = safe_call("iam.list_roles", lambda: _paginate(iam.list_roles, "Roles"))
 
     for error in (users_error, groups_error, roles_error):
@@ -79,16 +85,24 @@ def collect_iam(session: Any, region: str) -> SectionResult:
     roles = roles or []
 
     admin_policy = "arn:aws:iam::aws:policy/AdministratorAccess"
-    admin_roles = _entities_with_policy(iam.list_attached_role_policies, "role", roles, admin_policy, "RoleName")
-    admin_users = _entities_with_policy(iam.list_attached_user_policies, "user", users, admin_policy, "UserName")
-    admin_groups = _entities_with_policy(iam.list_attached_group_policies, "group", groups, admin_policy, "GroupName")
+    admin_roles = _entities_with_policy(
+        iam.list_attached_role_policies, "role", roles, admin_policy, "RoleName"
+    )
+    admin_users = _entities_with_policy(
+        iam.list_attached_user_policies, "user", users, admin_policy, "UserName"
+    )
+    admin_groups = _entities_with_policy(
+        iam.list_attached_group_policies, "group", groups, admin_policy, "GroupName"
+    )
 
     active_keys = []
     for user in users:
         user_name = user["UserName"]
         keys, keys_error = safe_call(
             f"iam.list_access_keys({user_name})",
-            lambda user_name=user_name: iam.list_access_keys(UserName=user_name)["AccessKeyMetadata"],
+            lambda user_name=user_name: iam.list_access_keys(UserName=user_name)[
+                "AccessKeyMetadata"
+            ],
         )
         if keys_error:
             result.errors.append(keys_error)
@@ -319,8 +333,12 @@ def collect_regional_compute(session: Any, region: str) -> SectionResult:
 
     instances = _collect(ec2.describe_instances, "Reservations", result, "ec2.describe_instances")
     volumes = _collect(ec2.describe_volumes, "Volumes", result, "ec2.describe_volumes")
-    snapshots = _collect(ec2.describe_snapshots, "Snapshots", result, "ec2.describe_snapshots", OwnerIds=["self"])
-    security_groups = _collect(ec2.describe_security_groups, "SecurityGroups", result, "ec2.describe_security_groups")
+    snapshots = _collect(
+        ec2.describe_snapshots, "Snapshots", result, "ec2.describe_snapshots", OwnerIds=["self"]
+    )
+    security_groups = _collect(
+        ec2.describe_security_groups, "SecurityGroups", result, "ec2.describe_security_groups"
+    )
     addresses = _collect(ec2.describe_addresses, "Addresses", result, "ec2.describe_addresses")
 
     open_sgs = []
@@ -379,8 +397,12 @@ def collect_regional_network(session: Any, region: str) -> SectionResult:
 
     vpcs = _collect(ec2.describe_vpcs, "Vpcs", result, "ec2.describe_vpcs")
     subnets = _collect(ec2.describe_subnets, "Subnets", result, "ec2.describe_subnets")
-    nat_gateways = _collect(ec2.describe_nat_gateways, "NatGateways", result, "ec2.describe_nat_gateways")
-    load_balancers = _collect(elbv2.describe_load_balancers, "LoadBalancers", result, "elbv2.describe_load_balancers")
+    nat_gateways = _collect(
+        ec2.describe_nat_gateways, "NatGateways", result, "ec2.describe_nat_gateways"
+    )
+    load_balancers = _collect(
+        elbv2.describe_load_balancers, "LoadBalancers", result, "elbv2.describe_load_balancers"
+    )
 
     result.data = {
         "region": region,
@@ -420,7 +442,9 @@ def collect_regional_serverless(session: Any, region: str) -> SectionResult:
     for cluster_arn in clusters or []:
         detail, detail_error = safe_call(
             f"ecs.describe_clusters({cluster_arn})",
-            lambda cluster_arn=cluster_arn: ecs.describe_clusters(clusters=[cluster_arn])["clusters"],
+            lambda cluster_arn=cluster_arn: ecs.describe_clusters(clusters=[cluster_arn])[
+                "clusters"
+            ],
         )
         if detail_error:
             result.errors.append(detail_error)
@@ -455,7 +479,9 @@ def collect_regional_storage(session: Any, region: str) -> SectionResult:
     dynamodb = client(session, "dynamodb", region)
     result = SectionResult(name=f"resources:storage:{region}", status="ok")
 
-    db_instances = _collect(rds.describe_db_instances, "DBInstances", result, "rds.describe_db_instances")
+    db_instances = _collect(
+        rds.describe_db_instances, "DBInstances", result, "rds.describe_db_instances"
+    )
     tables = _collect(dynamodb.list_tables, "TableNames", result, "dynamodb.list_tables")
 
     result.data = {
@@ -491,7 +517,9 @@ def collect_global_storage(session: Any, region: str) -> SectionResult:
     s3 = client(session, "s3", region)
     result = SectionResult(name="resources:storage:global", status="ok")
 
-    buckets, buckets_error = safe_call("s3.list_buckets", lambda: s3.list_buckets().get("Buckets", []))
+    buckets, buckets_error = safe_call(
+        "s3.list_buckets", lambda: s3.list_buckets().get("Buckets", [])
+    )
     if buckets_error:
         result.status = "error"
         result.errors.append(buckets_error)
@@ -502,11 +530,15 @@ def collect_global_storage(session: Any, region: str) -> SectionResult:
         name = bucket["Name"]
         location, location_error = safe_call(
             f"s3.get_bucket_location({name})",
-            lambda name=name: s3.get_bucket_location(Bucket=name).get("LocationConstraint") or "us-east-1",
+            lambda name=name: (
+                s3.get_bucket_location(Bucket=name).get("LocationConstraint") or "us-east-1"
+            ),
         )
         public_block, public_block_error = safe_call(
             f"s3.get_public_access_block({name})",
-            lambda name=name: s3.get_public_access_block(Bucket=name).get("PublicAccessBlockConfiguration"),
+            lambda name=name: s3.get_public_access_block(Bucket=name).get(
+                "PublicAccessBlockConfiguration"
+            ),
             not_found_ok=True,
         )
         policy_status, policy_status_error = safe_call(
@@ -683,7 +715,9 @@ def _entities_with_policy(
         name = entity[name_key]
         attached, _ = safe_call(
             f"iam.list_attached_{entity_type}_policies({name})",
-            lambda name=name: list_attached(**{f"{entity_type.capitalize()}Name": name}).get("AttachedPolicies", []),
+            lambda name=name: list_attached(**{f"{entity_type.capitalize()}Name": name}).get(
+                "AttachedPolicies", []
+            ),
         )
         for policy in attached or []:
             if policy.get("PolicyArn") == policy_arn:
@@ -695,7 +729,9 @@ def _entities_with_policy(
 def _credential_report(iam: Any, result: SectionResult) -> list[dict[str, str]]:
     import time
 
-    _, generate_error = safe_call("iam.generate_credential_report", lambda: iam.generate_credential_report())
+    _, generate_error = safe_call(
+        "iam.generate_credential_report", lambda: iam.generate_credential_report()
+    )
     if generate_error:
         result.errors.append(generate_error)
         return []
@@ -731,7 +767,9 @@ def _credential_report(iam: Any, result: SectionResult) -> list[dict[str, str]]:
             try:
                 decoded = base64.b64decode(report).decode("utf-8")
             except Exception as exc:
-                result.errors.append(f"iam.get_credential_report: failed to decode report bytes ({exc})")
+                result.errors.append(
+                    f"iam.get_credential_report: failed to decode report bytes ({exc})"
+                )
                 return []
     else:
         # Keep backward compatibility with environments that return base64 text.
@@ -740,7 +778,9 @@ def _credential_report(iam: Any, result: SectionResult) -> list[dict[str, str]]:
         except Exception:
             decoded = str(report)
             if "," not in decoded or "\n" not in decoded:
-                result.errors.append("iam.get_credential_report: report content is not valid CSV text")
+                result.errors.append(
+                    "iam.get_credential_report: report content is not valid CSV text"
+                )
                 return []
 
     reader = csv.DictReader(io.StringIO(decoded))
