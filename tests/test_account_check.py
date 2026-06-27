@@ -1,0 +1,173 @@
+from __future__ import annotations
+
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+
+from aws_account_audit import account_check as ac
+
+
+class TestCopyMapJsons(unittest.TestCase):
+    def test_copy_map_jsons_copies_from_multiple_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            base = Path(d)
+            src_a = base / "from-audit"
+            src_b = base / "all-security-groups"
+            dst = base / "combined-json"
+            src_a.mkdir(parents=True, exist_ok=True)
+            src_b.mkdir(parents=True, exist_ok=True)
+            (src_a / "a.json").write_text('{"k":"v"}', encoding="utf-8")
+            (src_b / "b.json").write_text('{"k":"v"}', encoding="utf-8")
+
+            copied = ac._copy_map_jsons([src_a, src_b], dst)
+
+            self.assertEqual(copied, 2)
+            self.assertTrue((dst / "from-audit-a.json").exists())
+            self.assertTrue((dst / "all-security-groups-b.json").exists())
+
+
+class TestMainPipeline(unittest.TestCase):
+    @mock.patch("aws_account_audit.account_check.iam_graph_main")
+    @mock.patch("aws_account_audit.account_check.account_graph_main")
+    @mock.patch("aws_account_audit.account_check._copy_map_jsons")
+    @mock.patch("aws_account_audit.account_check._run_all_sg_maps")
+    @mock.patch("aws_account_audit.account_check._collect_security_group_targets")
+    @mock.patch("aws_account_audit.account_check.from_audit_main")
+    @mock.patch("aws_account_audit.account_check.write_report")
+    @mock.patch("aws_account_audit.account_check.run_audit")
+    @mock.patch("aws_account_audit.account_check._selected_regions")
+    def test_main_runs_full_pipeline_and_writes_summary(
+        self,
+        selected_regions_mock: mock.Mock,
+        run_audit_mock: mock.Mock,
+        write_report_mock: mock.Mock,
+        from_audit_main_mock: mock.Mock,
+        collect_sg_mock: mock.Mock,
+        run_all_sg_mock: mock.Mock,
+        copy_map_jsons_mock: mock.Mock,
+        account_graph_main_mock: mock.Mock,
+        iam_graph_main_mock: mock.Mock,
+    ) -> None:
+        selected_regions_mock.return_value = ["us-east-2"]
+        run_audit_mock.return_value = SimpleNamespace(metadata={"account_id": "123456789012"})
+        from_audit_main_mock.return_value = 0
+        collect_sg_mock.return_value = [("us-east-2", "sg-1234")]
+        run_all_sg_mock.return_value = 0
+        copy_map_jsons_mock.return_value = 2
+        account_graph_main_mock.return_value = 0
+        iam_graph_main_mock.return_value = 0
+
+        with tempfile.TemporaryDirectory() as d:
+            output_dir = Path(d) / "runs"
+            audit_json = output_dir / "account-123456789012" / "audit-runs" / "audit.json"
+            audit_text = output_dir / "account-123456789012" / "audit-runs" / "audit.log"
+            audit_json.parent.mkdir(parents=True, exist_ok=True)
+            audit_json.write_text("{}", encoding="utf-8")
+            audit_text.write_text("ok", encoding="utf-8")
+            write_report_mock.return_value = {"json": audit_json, "text": audit_text}
+
+            rc = ac.main(["--output-dir", str(output_dir), "--profile", "default"])
+
+            self.assertEqual(rc, 0)
+            summary_path = output_dir / "account-123456789012" / "account-check-summary.json"
+            self.assertTrue(summary_path.exists())
+            payload = json.loads(summary_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["account_id"], "123456789012")
+            self.assertEqual(payload["copied_map_json_files"], 2)
+            run_audit_mock.assert_called_once()
+            account_graph_main_mock.assert_called_once()
+            iam_graph_main_mock.assert_called_once()
+
+    @mock.patch("aws_account_audit.account_check.iam_graph_main")
+    @mock.patch("aws_account_audit.account_check.account_graph_main")
+    @mock.patch("aws_account_audit.account_check._copy_map_jsons")
+    @mock.patch("aws_account_audit.account_check._run_all_sg_maps")
+    @mock.patch("aws_account_audit.account_check._collect_security_group_targets")
+    @mock.patch("aws_account_audit.account_check.from_audit_main")
+    @mock.patch("aws_account_audit.account_check.write_report")
+    @mock.patch("aws_account_audit.account_check.run_audit")
+    @mock.patch("aws_account_audit.account_check._selected_regions")
+    def test_main_returns_error_when_no_map_json_files(
+        self,
+        selected_regions_mock: mock.Mock,
+        run_audit_mock: mock.Mock,
+        write_report_mock: mock.Mock,
+        from_audit_main_mock: mock.Mock,
+        collect_sg_mock: mock.Mock,
+        run_all_sg_mock: mock.Mock,
+        copy_map_jsons_mock: mock.Mock,
+        account_graph_main_mock: mock.Mock,
+        iam_graph_main_mock: mock.Mock,
+    ) -> None:
+        selected_regions_mock.return_value = ["us-east-2"]
+        run_audit_mock.return_value = SimpleNamespace(metadata={"account_id": "123456789012"})
+        from_audit_main_mock.return_value = 0
+        collect_sg_mock.return_value = []
+        run_all_sg_mock.return_value = 0
+        copy_map_jsons_mock.return_value = 0
+        account_graph_main_mock.return_value = 0
+        iam_graph_main_mock.return_value = 0
+
+        with tempfile.TemporaryDirectory() as d:
+            output_dir = Path(d) / "runs"
+            audit_json = output_dir / "account-123456789012" / "audit-runs" / "audit.json"
+            audit_text = output_dir / "account-123456789012" / "audit-runs" / "audit.log"
+            audit_json.parent.mkdir(parents=True, exist_ok=True)
+            audit_json.write_text("{}", encoding="utf-8")
+            audit_text.write_text("ok", encoding="utf-8")
+            write_report_mock.return_value = {"json": audit_json, "text": audit_text}
+
+            rc = ac.main(["--output-dir", str(output_dir), "--profile", "default"])
+
+            self.assertEqual(rc, 1)
+            account_graph_main_mock.assert_not_called()
+            iam_graph_main_mock.assert_not_called()
+
+    @mock.patch("aws_account_audit.account_check.iam_graph_main")
+    @mock.patch("aws_account_audit.account_check.account_graph_main")
+    @mock.patch("aws_account_audit.account_check._copy_map_jsons")
+    @mock.patch("aws_account_audit.account_check._run_all_sg_maps")
+    @mock.patch("aws_account_audit.account_check._collect_security_group_targets")
+    @mock.patch("aws_account_audit.account_check.from_audit_main")
+    @mock.patch("aws_account_audit.account_check.write_report")
+    @mock.patch("aws_account_audit.account_check.run_audit")
+    @mock.patch("aws_account_audit.account_check._selected_regions")
+    def test_main_returns_error_when_mapping_stage_fails(
+        self,
+        selected_regions_mock: mock.Mock,
+        run_audit_mock: mock.Mock,
+        write_report_mock: mock.Mock,
+        from_audit_main_mock: mock.Mock,
+        collect_sg_mock: mock.Mock,
+        run_all_sg_mock: mock.Mock,
+        copy_map_jsons_mock: mock.Mock,
+        account_graph_main_mock: mock.Mock,
+        iam_graph_main_mock: mock.Mock,
+    ) -> None:
+        selected_regions_mock.return_value = ["us-east-2"]
+        run_audit_mock.return_value = SimpleNamespace(metadata={"account_id": "123456789012"})
+        from_audit_main_mock.return_value = 1
+        collect_sg_mock.return_value = [("us-east-2", "sg-1234")]
+        run_all_sg_mock.return_value = 0
+        copy_map_jsons_mock.return_value = 1
+        account_graph_main_mock.return_value = 0
+        iam_graph_main_mock.return_value = 0
+
+        with tempfile.TemporaryDirectory() as d:
+            output_dir = Path(d) / "runs"
+            audit_json = output_dir / "account-123456789012" / "audit-runs" / "audit.json"
+            audit_text = output_dir / "account-123456789012" / "audit-runs" / "audit.log"
+            audit_json.parent.mkdir(parents=True, exist_ok=True)
+            audit_json.write_text("{}", encoding="utf-8")
+            audit_text.write_text("ok", encoding="utf-8")
+            write_report_mock.return_value = {"json": audit_json, "text": audit_text}
+
+            rc = ac.main(["--output-dir", str(output_dir), "--profile", "default"])
+            self.assertEqual(rc, 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

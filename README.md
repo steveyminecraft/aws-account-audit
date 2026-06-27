@@ -122,6 +122,23 @@ The IAM graph includes:
 - Principal->policy attachment links
 - Role trust relationships (role->trusted principal)
 
+## Account Check (All-In-One)
+
+For a single command that audits an account, maps resources, builds an account graph, and builds an IAM relationship graph:
+
+```bash
+python -m aws_account_audit.account_check \
+  --profile my-profile \
+  --region eu-west-1 \
+  --output-dir ./account-check-runs
+```
+
+This writes grouped outputs under:
+
+- `./account-check-runs/account-<account-id>/audit-runs/`
+- `./account-check-runs/account-<account-id>/network-maps/`
+- `./account-check-runs/account-<account-id>/account-check-summary.json`
+
 ---
 
 ## AWS Network Map
@@ -237,6 +254,7 @@ Read-only EC2, ELBv2, RDS, and Lambda APIs in the target region(s).
 - Explicit regions: `python -m aws_account_audit --regions eu-west-1 us-east-2`
 - Section-limited scan: `python -m aws_account_audit --sections identity iam security_services`
 - IAM relationship graph export: `python -m aws_account_audit.iam_graph --output-base ./network-maps/iam-graph`
+- One-command full account check (audit + resource maps + account graph + IAM graph): `python -m aws_account_audit.account_check --profile my-profile --output-dir ./account-check-runs`
 
 ### `aws_network_map`
 
