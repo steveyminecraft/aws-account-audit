@@ -75,9 +75,52 @@ The tool is read-only. Effective access depends on the caller's IAM permissions.
 
 Some APIs return access denied errors for specific services; those are recorded in the report and the audit continues.
 
-## Related tooling
+## IAM Permission Audit Script
 
-This complements `build-account-isolation/scripts/audit-iam.sh`, which focuses on IAM-only checks from the shell.
+For fast IAM/account-permission auditing from the shell, this repo also includes:
+
+- `scripts/audit-iam.sh`
+
+Usage examples:
+
+```bash
+# Run with default region (eu-west-1) and active AWS credentials
+./scripts/audit-iam.sh
+
+# Run with explicit profile and region
+./scripts/audit-iam.sh --profile my-profile --region us-east-2
+
+# Save output log file
+./scripts/audit-iam.sh --profile my-profile --output-dir ./audit-runs/iam-shell
+```
+
+This script is read-only and focuses on IAM, Identity Center, account security controls, and org visibility.
+
+## IAM Relationship Graph
+
+To visualize how IAM users, groups, roles, and policies relate, run:
+
+```bash
+# Writes JSON + HTML + PNG
+python -m aws_account_audit.iam_graph \
+  --profile my-profile \
+  --region eu-west-1 \
+  --output-base ./network-maps/iam-graph
+```
+
+Outputs:
+
+- `<output-base>.json` - graph data for automation
+- `<output-base>.html` - interactive Mermaid graph
+- `<output-base>.png` - rendered image
+
+The IAM graph includes:
+
+- User/group/role principal nodes
+- Managed and inline policy nodes
+- User->group membership links
+- Principal->policy attachment links
+- Role trust relationships (role->trusted principal)
 
 ---
 
@@ -193,6 +236,7 @@ Read-only EC2, ELBv2, RDS, and Lambda APIs in the target region(s).
 - One region only: `python -m aws_account_audit --no-all-regions --region eu-west-1`
 - Explicit regions: `python -m aws_account_audit --regions eu-west-1 us-east-2`
 - Section-limited scan: `python -m aws_account_audit --sections identity iam security_services`
+- IAM relationship graph export: `python -m aws_account_audit.iam_graph --output-base ./network-maps/iam-graph`
 
 ### `aws_network_map`
 
