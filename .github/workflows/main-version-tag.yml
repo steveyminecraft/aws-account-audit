@@ -1,0 +1,57 @@
+name: Main Version Tag
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: main-version-tag
+  cancel-in-progress: false
+
+jobs:
+  tag-main-commit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create semantic version tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git tag --points-at "$GITHUB_SHA" --list "v*" | grep -q .; then
+            echo "Current commit already has a v* tag; skipping."
+            exit 0
+          fi
+
+          latest_tag="$(
+            git tag -l "v*" \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sort -V \
+              | tail -n 1 || true
+          )"
+          if [[ -z "${latest_tag}" ]]; then
+            new_tag="v1.0.0"
+          else
+            if [[ "${latest_tag}" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              major="${BASH_REMATCH[1]}"
+              minor="${BASH_REMATCH[2]}"
+              patch="${BASH_REMATCH[3]}"
+              new_patch=$((patch + 1))
+              new_tag="v${major}.${minor}.${new_patch}"
+            else
+              echo "Latest tag '${latest_tag}' is not SemVer (vMAJOR.MINOR.PATCH)."
+              exit 1
+            fi
+          fi
+
+          echo "Tagging ${GITHUB_SHA} as ${new_tag}"
+          git tag "${new_tag}" "${GITHUB_SHA}"
+          git push origin "${new_tag}"
