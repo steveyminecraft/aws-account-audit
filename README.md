@@ -289,6 +289,7 @@ Read-only EC2, ELBv2, RDS, and Lambda APIs in the target region(s).
 ## Linting, Build, and Tests
 
 This repo includes Python quality tooling and an npm smoke test for Mermaid CLI via CI (`.github/workflows/python-quality.yml`).
+Recommended workflow: create a feature branch and open a PR instead of committing directly to `main`.
 
 Run locally:
 
