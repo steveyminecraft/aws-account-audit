@@ -304,3 +304,11 @@ npm ci
 npm test
 ```
 
+## Version Tagging
+
+Main branch commits are automatically tagged using semantic version tags via `.github/workflows/main-version-tag.yml`.
+
+- First tag when no version tags exist: `v1.0.0`
+- Subsequent tags on each new `main` commit: patch increments (`v1.0.1`, `v1.0.2`, ...)
+- No release artifacts are created; tags are for source tracking only.
+
