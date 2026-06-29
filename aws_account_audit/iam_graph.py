@@ -229,7 +229,12 @@ def write_iam_png(graph: IamGraph, path: Path, *, direction: str = "TB") -> None
     path.parent.mkdir(parents=True, exist_ok=True)
     mmd_path = path.with_suffix(".mmd")
     mmd_path.write_text(render_iam_mermaid(graph, direction=direction), encoding="utf-8")
-    png_ok, png_error = _render_png(mmd_path, path)
+    png_ok, png_error = _render_png(
+        mmd_path,
+        path,
+        node_count=len(graph.nodes),
+        edge_count=len(graph.edges),
+    )
     mmd_path.unlink(missing_ok=True)
     if not png_ok:
         raise RuntimeError(png_error or "PNG export failed.")

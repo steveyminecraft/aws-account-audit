@@ -41,7 +41,12 @@ def export_network_map(
         )
     )
 
-    png_ok, png_error = _render_png(mmd_path, png_path)
+    png_ok, png_error = _render_png(
+        mmd_path,
+        png_path,
+        node_count=len(graph.nodes),
+        edge_count=len(graph.edges),
+    )
     mmd_path.unlink(missing_ok=True)
 
     written: dict[str, Path | None] = {
@@ -85,10 +90,53 @@ class PngExportError(Exception):
         return self.written.get("md")
 
 
-def _render_png(mermaid_source: Path, png_path: Path) -> tuple[bool, str | None]:
+def compute_png_dimensions(
+    node_count: int,
+    edge_count: int,
+) -> tuple[int, int, float, int]:
+    """Return viewport width, height, scale, and render timeout for a graph size."""
+    nodes = max(int(node_count), 1)
+    edges = max(int(edge_count), 0)
+
+    width = min(24000, max(3200, nodes * 160 + edges * 28))
+    height = min(20000, max(2400, nodes * 110 + edges * 20))
+
+    scale = 2.0
+    if nodes >= 40:
+        scale = 2.5
+    if nodes >= 80:
+        scale = 3.0
+    if nodes >= 150:
+        scale = 3.5
+    if nodes >= 250:
+        scale = 4.0
+
+    timeout_seconds = min(600, max(120, 90 + nodes * 2 + edges))
+    return width, height, scale, timeout_seconds
+
+
+def _render_png(
+    mermaid_source: Path,
+    png_path: Path,
+    *,
+    node_count: int | None = None,
+    edge_count: int | None = None,
+) -> tuple[bool, str | None]:
     png_path.parent.mkdir(parents=True, exist_ok=True)
 
-    command = _png_render_command(mermaid_source, png_path)
+    if node_count is None or edge_count is None:
+        node_count, edge_count = _estimate_mermaid_counts(
+            mermaid_source.read_text(encoding="utf-8")
+        )
+
+    width, height, scale, timeout_seconds = compute_png_dimensions(node_count, edge_count)
+    command = _png_render_command(
+        mermaid_source,
+        png_path,
+        width=width,
+        height=height,
+        scale=scale,
+    )
     if command is None:
         return False, (
             "PNG export requires @mermaid-js/mermaid-cli. "
@@ -100,11 +148,11 @@ def _render_png(mermaid_source: Path, png_path: Path) -> tuple[bool, str | None]
             command,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=timeout_seconds,
             check=False,
         )
     except subprocess.TimeoutExpired:
-        return False, "PNG export timed out after 120 seconds."
+        return False, f"PNG export timed out after {timeout_seconds} seconds."
     except OSError as exc:
         return False, f"PNG export failed to start renderer: {exc}"
 
@@ -118,7 +166,33 @@ def _render_png(mermaid_source: Path, png_path: Path) -> tuple[bool, str | None]
     return False, message
 
 
-def _png_render_command(mermaid_source: Path, png_path: Path) -> list[str] | None:
+def _estimate_mermaid_counts(mermaid: str) -> tuple[int, int]:
+    node_count = 0
+    edge_count = 0
+    for line in mermaid.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("%%"):
+            continue
+        if stripped.startswith("flowchart ") or stripped.startswith("classDef "):
+            continue
+        if stripped.startswith("subgraph ") or stripped == "end":
+            continue
+        if "-->" in stripped:
+            edge_count += 1
+            continue
+        if any(token in stripped for token in ('["', "[[", "((", "{{")):
+            node_count += 1
+    return max(node_count, 1), edge_count
+
+
+def _png_render_command(
+    mermaid_source: Path,
+    png_path: Path,
+    *,
+    width: int,
+    height: int,
+    scale: float,
+) -> list[str] | None:
     puppeteer_config = Path(__file__).resolve().parent / "puppeteer-config.json"
     args = [
         "-i",
@@ -128,11 +202,11 @@ def _png_render_command(mermaid_source: Path, png_path: Path) -> list[str] | Non
         "-b",
         "white",
         "-w",
-        "2800",
+        str(width),
         "-H",
-        "1800",
+        str(height),
         "-s",
-        "2",
+        str(scale),
         "-p",
         str(puppeteer_config),
     ]

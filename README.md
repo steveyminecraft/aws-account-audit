@@ -142,7 +142,7 @@ This writes grouped outputs under `./account-check-runs/account-<account-id>/`:
 - `network-maps/account-graph-<account-id>.*` — merged account-wide network graph (`.json`, `.html`, `.png`)
 - `account-check-summary.json` — index of all generated artifacts
 
-Graphs use color-coded node types, grouped subgraphs, and a scrollable HTML viewer with legend. PNG exports render at higher resolution for readability.
+Graphs use color-coded node types, grouped subgraphs, and a scrollable HTML viewer with legend. PNG exports scale viewport size and render resolution with graph size so large account maps stay sharp when zoomed.
 
 Optional flags:
 
