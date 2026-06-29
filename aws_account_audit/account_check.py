@@ -3,11 +3,16 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 from aws_account_audit.audit import run_audit, write_report
-from aws_account_audit.iam_graph import main as iam_graph_main
+from aws_account_audit.iam_graph import (
+    collect_iam_relationship_data,
+    generate_iam_outputs,
+    write_iam_data_json,
+)
 from aws_account_audit.session import client, create_session, enabled_regions
 from aws_network_map.account_graph import main as account_graph_main
 from aws_network_map.cli import main as network_map_main
@@ -49,10 +54,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional max number of security groups to map (after dedupe)",
     )
     parser.add_argument(
+        "--skip-iam-shell-audit",
+        action="store_true",
+        help="Skip scripts/audit-iam.sh shell audit stage",
+    )
+    parser.add_argument(
         "--direction",
         choices=["LR", "TB"],
-        default="LR",
-        help="Mermaid direction for generated graphs",
+        default="TB",
+        help="Mermaid direction for generated graphs (default: TB)",
     )
     return parser
 
@@ -118,6 +128,37 @@ def _run_all_sg_maps(
     return failures
 
 
+def _run_audit_iam_shell(profile: str | None, region: str, output_dir: Path) -> int:
+    script = Path(__file__).resolve().parents[1] / "scripts" / "audit-iam.sh"
+    if not script.exists():
+        print(f"IAM shell audit script not found: {script}", file=sys.stderr)
+        return 1
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    command = [str(script), "--region", region, "--output-dir", str(output_dir)]
+    if profile:
+        command.extend(["--profile", profile])
+
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=900,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        print("IAM shell audit timed out after 900 seconds.", file=sys.stderr)
+        return 1
+
+    if result.returncode != 0:
+        details = (result.stderr or result.stdout or "").strip()
+        print(f"IAM shell audit failed with exit code {result.returncode}.", file=sys.stderr)
+        if details:
+            print(details, file=sys.stderr)
+    return result.returncode
+
+
 def _copy_map_jsons(source_dirs: list[Path], destination: Path) -> int:
     destination.mkdir(parents=True, exist_ok=True)
     copied = 0
@@ -145,6 +186,7 @@ def main(argv: list[str] | None = None) -> int:
     account_id = str(report.metadata.get("account_id") or "unknown-account")
     run_dir = args.output_dir / f"account-{account_id}"
     audit_dir = run_dir / "audit-runs"
+    iam_dir = run_dir / "iam-runs"
     network_dir = run_dir / "network-maps"
     from_audit_dir = network_dir / "from-audit"
     all_sg_dir = network_dir / "all-security-groups"
@@ -200,23 +242,33 @@ def main(argv: list[str] | None = None) -> int:
         ]
     )
 
-    iam_graph_base = network_dir / f"iam-graph-{account_id}"
-    iam_argv = [
-        "--region",
-        args.region,
-        "--output-base",
-        str(iam_graph_base),
-        "--direction",
-        args.direction,
-    ]
-    if args.profile:
-        iam_argv.extend(["--profile", args.profile])
-    iam_graph_rc = iam_graph_main(iam_argv)
+    iam_audit_json = iam_dir / f"iam-audit-{account_id}.json"
+    iam_data = collect_iam_relationship_data(profile=args.profile, region=args.region)
+    write_iam_data_json(iam_data, iam_audit_json)
+
+    iam_shell_rc = 0
+    if not args.skip_iam_shell_audit:
+        iam_shell_rc = _run_audit_iam_shell(args.profile, args.region, iam_dir)
+
+    iam_graph_base = iam_dir / f"iam-graph-{account_id}"
+    iam_graph = generate_iam_outputs(
+        data=iam_data,
+        output_base=iam_graph_base,
+        direction=args.direction,
+    )
+    iam_graph_rc = 0
 
     summary = {
         "account_id": account_id,
         "audit_json": str(audit_json),
         "audit_text": str(written["text"]),
+        "iam_audit_json": str(iam_audit_json),
+        "iam_shell_audit_rc": iam_shell_rc,
+        "iam_graph_json": str(iam_graph_base.with_suffix(".json")),
+        "iam_graph_html": str(iam_graph_base.with_suffix(".html")),
+        "iam_graph_png": str(iam_graph_base.with_suffix(".png")),
+        "iam_graph_summary": iam_graph.summary(),
+        "iam_graph_rc": iam_graph_rc,
         "from_audit_rc": from_audit_rc,
         "all_sg_failures": all_sg_failures,
         "copied_map_json_files": copied_json_files,
@@ -224,17 +276,19 @@ def main(argv: list[str] | None = None) -> int:
         "account_graph_html": str(account_graph_base.with_suffix(".html")),
         "account_graph_png": str(account_graph_base.with_suffix(".png")),
         "account_graph_rc": account_graph_rc,
-        "iam_graph_json": str(iam_graph_base.with_suffix(".json")),
-        "iam_graph_html": str(iam_graph_base.with_suffix(".html")),
-        "iam_graph_png": str(iam_graph_base.with_suffix(".png")),
-        "iam_graph_rc": iam_graph_rc,
     }
     summary_path = run_dir / "account-check-summary.json"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"Wrote account check summary: {summary_path}")
 
-    if account_graph_rc != 0 or iam_graph_rc != 0 or from_audit_rc != 0 or all_sg_failures > 0:
+    if (
+        account_graph_rc != 0
+        or iam_graph_rc != 0
+        or iam_shell_rc != 0
+        or from_audit_rc != 0
+        or all_sg_failures > 0
+    ):
         return 1
     return 0
 

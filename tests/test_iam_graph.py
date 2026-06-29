@@ -423,15 +423,15 @@ class TestRenderIamMermaid(unittest.TestCase):
         mmd = ig.render_iam_mermaid(self.graph)
         self.assertTrue(mmd.strip().startswith("flowchart"))
 
-    def test_default_direction_lr(self) -> None:
-        """Default direction is LR."""
+    def test_default_direction_tb(self) -> None:
+        """Default direction is TB."""
         mmd = ig.render_iam_mermaid(self.graph)
-        self.assertIn("LR", mmd.splitlines()[0])
-
-    def test_custom_direction_tb(self) -> None:
-        """Passing direction='TB' sets direction to TB."""
-        mmd = ig.render_iam_mermaid(self.graph, direction="TB")
         self.assertIn("TB", mmd.splitlines()[0])
+
+    def test_custom_direction_lr(self) -> None:
+        """Passing direction='LR' sets direction to LR."""
+        mmd = ig.render_iam_mermaid(self.graph, direction="LR")
+        self.assertIn("LR", mmd.splitlines()[0])
 
     def test_node_label_present(self) -> None:
         """A principal name appears in the Mermaid output."""

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import html
 import json
 import re
 import sys
@@ -12,6 +11,12 @@ from typing import Any
 from aws_account_audit.audit import run_audit, write_report
 from aws_network_map import from_audit
 from aws_network_map.export import _render_png
+from aws_network_map.graph_style import (
+    NETWORK_LEGEND,
+    class_def_lines,
+    kind_class_for_network,
+    render_interactive_html,
+)
 
 REQUIRED_MAP_KEYS = {"root", "region", "nodes", "edges", "ingress_paths", "errors"}
 
@@ -84,32 +89,21 @@ def merge_maps(maps: list[dict[str, Any]]) -> AccountGraph:
     return graph
 
 
-def render_account_html(graph: AccountGraph, *, direction: str = "LR") -> str:
+def render_account_html(graph: AccountGraph, *, direction: str = "TB") -> str:
     root_label = graph.account_id or ", ".join(graph.sources) or "account"
     mermaid = render_account_mermaid(graph, direction=direction)
-    title = html.escape(f"Account graph: {root_label}")
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>{title}</title>
-  <script type="module">
-    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-    mermaid.initialize({{ startOnLoad: true, theme: "neutral" }});
-  </script>
-  <style>
-    body {{ font-family: sans-serif; margin: 2rem; }}
-    pre {{ background: #f6f8fa; padding: 1rem; overflow-x: auto; }}
-  </style>
-</head>
-<body>
-  <h1>{title}</h1>
-  <p>Sources merged: {len(graph.sources)}</p>
-  <p>Nodes: {len(graph.nodes)} | Edges: {len(graph.edges)}</p>
-  <pre class="mermaid">{html.escape(mermaid)}</pre>
-</body>
-</html>
-"""
+    summary = graph.summary()
+    subtitle = (
+        f"Account {root_label} | Sources: {summary['source_count']} | "
+        f"Nodes: {summary['node_count']} | Edges: {summary['edge_count']} | "
+        f"Ingress paths: {summary['path_count']}"
+    )
+    return render_interactive_html(
+        title=f"Account network graph: {root_label}",
+        subtitle=subtitle,
+        mermaid=mermaid,
+        legend=NETWORK_LEGEND,
+    )
 
 
 def write_html(graph: AccountGraph, path: Path, *, direction: str = "LR") -> None:
@@ -348,7 +342,21 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _mermaid_id(node_id: str) -> str:
+def _mermaid_id(node_id: str, seen: dict[str, str] | None = None) -> str:
+    if seen is not None:
+        if node_id in seen:
+            return seen[node_id]
+        safe = re.sub(r"[^a-zA-Z0-9_]", "_", node_id)
+        if safe and safe[0].isdigit():
+            safe = f"n_{safe}"
+        candidate = safe
+        counter = 2
+        while candidate in seen.values():
+            candidate = f"{safe}_{counter}"
+            counter += 1
+        seen[node_id] = candidate
+        return candidate
+
     safe = re.sub(r"[^a-zA-Z0-9_]", "_", node_id)
     if safe and safe[0].isdigit():
         safe = f"n_{safe}"
@@ -362,20 +370,67 @@ def _escape_mermaid(value: str) -> str:
     return escaped
 
 
-def render_account_mermaid(graph: AccountGraph, *, direction: str = "LR") -> str:
+def render_account_mermaid(graph: AccountGraph, *, direction: str = "TB") -> str:
     mermaid_lines = [f"flowchart {direction}"]
+    mermaid_ids: dict[str, str] = {}
+
+    subgraph_order = [
+        ("internet", "Internet"),
+        ("cidr", "CIDR blocks"),
+        ("security_group", "Security groups"),
+        ("network", "Network fabric"),
+        ("compute", "Compute"),
+        ("lb", "Load balancers"),
+        ("other", "Other resources"),
+    ]
+    bucket_keys = {key for key, _ in subgraph_order}
+    nodes_by_bucket: dict[str, list[dict[str, Any]]] = {key: [] for key in bucket_keys}
+
     for node in graph.nodes.values():
-        node_id = _mermaid_id(str(node.get("node_id", "")))
-        label = _escape_mermaid(str(node.get("label", node.get("node_id", "unknown"))))
-        mermaid_lines.append(f'    {node_id}["{label}"]')
+        kind = str(node.get("kind", ""))
+        bucket = _network_bucket(kind)
+        nodes_by_bucket[bucket].append(node)
+
+    for bucket, title in subgraph_order:
+        nodes = sorted(nodes_by_bucket[bucket], key=lambda item: str(item.get("label", "")))
+        if not nodes:
+            continue
+        subgraph_id = _mermaid_id(f"subgraph_{bucket}", mermaid_ids)
+        mermaid_lines.append(f'    subgraph {subgraph_id}["{title}"]')
+        for node in nodes:
+            node_id = str(node.get("node_id", ""))
+            mid = _mermaid_id(node_id, mermaid_ids)
+            label = _escape_mermaid(str(node.get("label", node_id)))
+            kind = str(node.get("kind", ""))
+            css_class = kind_class_for_network(kind)
+            class_suffix = f":::{css_class}" if css_class else ""
+            mermaid_lines.append(f'        {mid}["{label}"]{class_suffix}')
+        mermaid_lines.append("    end")
 
     for edge in graph.edges:
-        source = _mermaid_id(str(edge.get("source", "")))
-        target = _mermaid_id(str(edge.get("target", "")))
+        source = _mermaid_id(str(edge.get("source", "")), mermaid_ids)
+        target = _mermaid_id(str(edge.get("target", "")), mermaid_ids)
         label = _escape_mermaid(str(edge.get("label", "")))
         mermaid_lines.append(f'    {source} -->|"{label}"| {target}')
 
+    mermaid_lines.extend(class_def_lines())
     return "\n".join(mermaid_lines) + "\n"
+
+
+def _network_bucket(kind: str) -> str:
+    if kind in {"internet"}:
+        return "internet"
+    if kind in {"cidr"}:
+        return "cidr"
+    if kind in {"security_group"}:
+        return "security_group"
+    if kind in {"vpc", "subnet", "route_table", "nacl", "igw", "nat", "network_interface"}:
+        return "network"
+    if kind in {"ec2_instance", "rds_instance", "lambda_function", "target"}:
+        return "compute"
+    if kind in {"load_balancer", "target_group"}:
+        return "lb"
+    return "other"
 
 
 if __name__ == "__main__":

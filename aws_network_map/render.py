@@ -1,11 +1,16 @@
 from __future__ import annotations
 
-import html
 import json
 import re
 from typing import Any
 
 from aws_network_map.graph import NetworkGraph
+from aws_network_map.graph_style import (
+    NETWORK_LEGEND,
+    class_def_lines,
+    kind_class_for_network,
+    render_interactive_html,
+)
 
 
 KIND_SHAPES = {
@@ -34,10 +39,15 @@ def render_mermaid(graph: NetworkGraph, *, direction: str = "LR") -> str:
     for node in graph.nodes.values():
         left, right = KIND_SHAPES.get(node.kind, ("[", "]"))
         label = _escape_mermaid(node.label)
+        node_ref = f'{_mermaid_id(node.node_id)}{left}"{label}"{right}'
         if _is_focus_node(node, root):
-            lines.append(f'    {_mermaid_id(node.node_id)}{left}"{label}"{right}:::root')
+            lines.append(f"    {node_ref}:::root")
         else:
-            lines.append(f'    {_mermaid_id(node.node_id)}{left}"{label}"{right}')
+            kind_class = kind_class_for_network(node.kind)
+            if kind_class:
+                lines.append(f"    {node_ref}:::{kind_class}")
+            else:
+                lines.append(f"    {node_ref}")
 
     for edge in graph.edges:
         edge_label = _escape_mermaid(edge.label)
@@ -45,11 +55,7 @@ def render_mermaid(graph: NetworkGraph, *, direction: str = "LR") -> str:
             f'    {_mermaid_id(edge.source)} -->|"{edge_label}"| {_mermaid_id(edge.target)}'
         )
 
-    lines.extend(
-        [
-            "    classDef root fill:#ffe6a7,stroke:#b45309,stroke-width:2px",
-        ]
-    )
+    lines.extend(class_def_lines())
     return "\n".join(lines) + "\n"
 
 
@@ -172,28 +178,14 @@ def render_markdown(
 
 def render_html(graph: NetworkGraph, *, direction: str = "LR") -> str:
     mermaid = render_mermaid(graph, direction=direction)
-    title = html.escape(f"Network map: {graph.root}")
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>{title}</title>
-  <script type="module">
-    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-    mermaid.initialize({{ startOnLoad: true, theme: "neutral" }});
-  </script>
-  <style>
-    body {{ font-family: sans-serif; margin: 2rem; }}
-    pre {{ background: #f6f8fa; padding: 1rem; overflow-x: auto; }}
-  </style>
-</head>
-<body>
-  <h1>{title}</h1>
-  <p>Region: {html.escape(graph.region)}</p>
-  <pre class="mermaid">{html.escape(mermaid)}</pre>
-</body>
-</html>
-"""
+    title = f"Network map: {graph.root}"
+    subtitle = f"Region: {graph.region} | Nodes: {len(graph.nodes)} | Edges: {len(graph.edges)}"
+    return render_interactive_html(
+        title=title,
+        subtitle=subtitle,
+        mermaid=mermaid,
+        legend=NETWORK_LEGEND,
+    )
 
 
 def _mermaid_id(node_id: str) -> str:
