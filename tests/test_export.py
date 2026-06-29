@@ -47,7 +47,9 @@ class TestEstimateMermaidCounts(unittest.TestCase):
 
 class TestMermaidLimits(unittest.TestCase):
     def test_mermaid_config_allows_large_diagrams(self) -> None:
-        config_path = Path(__file__).resolve().parents[1] / "aws_network_map" / "mermaid-config.json"
+        config_path = (
+            Path(__file__).resolve().parents[1] / "aws_network_map" / "mermaid-config.json"
+        )
         payload = json.loads(config_path.read_text(encoding="utf-8"))
         self.assertGreaterEqual(payload["maxTextSize"], 500_000)
 
@@ -55,7 +57,7 @@ class TestMermaidLimits(unittest.TestCase):
         html = render_interactive_html(
             title="Test graph",
             subtitle="Nodes: 1",
-            mermaid="flowchart TB\n    a[\"node\"]",
+            mermaid='flowchart TB\n    a["node"]',
         )
         self.assertIn(f"maxTextSize: {MERMAID_MAX_TEXT_SIZE}", html)
 
