@@ -194,6 +194,7 @@ def _png_render_command(
     scale: float,
 ) -> list[str] | None:
     puppeteer_config = Path(__file__).resolve().parent / "puppeteer-config.json"
+    mermaid_config = Path(__file__).resolve().parent / "mermaid-config.json"
     args = [
         "-i",
         str(mermaid_source),
@@ -207,6 +208,8 @@ def _png_render_command(
         str(height),
         "-s",
         str(scale),
+        "-c",
+        str(mermaid_config),
         "-p",
         str(puppeteer_config),
     ]

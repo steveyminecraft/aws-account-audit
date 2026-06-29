@@ -65,6 +65,9 @@ IAM_LEGEND: tuple[tuple[str, str], ...] = (
     ("Administrator access", "admin"),
 )
 
+# Mermaid rejects diagrams above 50k chars by default; account-wide maps exceed that.
+MERMAID_MAX_TEXT_SIZE = 900_000
+
 
 def class_def_lines(*, extra: dict[str, str] | None = None) -> list[str]:
     styles = dict(CLASS_DEFS)
@@ -116,6 +119,7 @@ def render_interactive_html(
     import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
     mermaid.initialize({{
       startOnLoad: true,
+      maxTextSize: {MERMAID_MAX_TEXT_SIZE},
       theme: "base",
       themeVariables: {{
         fontSize: "15px",

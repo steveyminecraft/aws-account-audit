@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import unittest
+from pathlib import Path
 
 from aws_network_map.export import _estimate_mermaid_counts, compute_png_dimensions
+from aws_network_map.graph_style import MERMAID_MAX_TEXT_SIZE, render_interactive_html
 
 
 class TestComputePngDimensions(unittest.TestCase):
@@ -40,6 +43,23 @@ class TestEstimateMermaidCounts(unittest.TestCase):
         nodes, edges = _estimate_mermaid_counts(mermaid)
         self.assertGreaterEqual(nodes, 1)
         self.assertEqual(edges, 1)
+
+
+class TestMermaidLimits(unittest.TestCase):
+    def test_mermaid_config_allows_large_diagrams(self) -> None:
+        config_path = (
+            Path(__file__).resolve().parents[1] / "aws_network_map" / "mermaid-config.json"
+        )
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+        self.assertGreaterEqual(payload["maxTextSize"], 500_000)
+
+    def test_html_includes_max_text_size(self) -> None:
+        html = render_interactive_html(
+            title="Test graph",
+            subtitle="Nodes: 1",
+            mermaid='flowchart TB\n    a["node"]',
+        )
+        self.assertIn(f"maxTextSize: {MERMAID_MAX_TEXT_SIZE}", html)
 
 
 if __name__ == "__main__":

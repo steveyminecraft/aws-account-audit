@@ -456,6 +456,32 @@ class TestRenderIamMermaid(unittest.TestCase):
             node_id_part = line.strip().split("[")[0].split("(")[0]
             self.assertNotIn(":", node_id_part)
 
+    def test_mermaid_stays_compact_for_many_managed_policies(self) -> None:
+        """IAM mermaid output should not embed full policy ARNs in node identifiers."""
+        graph = ig.IamGraph()
+        ig._add_principal_nodes(graph, [_user("app-user")], "user")
+        for index in range(120):
+            policy_arn = f"arn:aws:iam::123456789012:policy/CustomerPolicy{index:03d}"
+            policy_node = f"policy:CustomerPolicy{index:03d}"
+            ig._add_policy_node(
+                graph,
+                policy_node,
+                f"CustomerPolicy{index:03d}",
+                {"arn": policy_arn, "managed": True},
+            )
+            ig._add_edge(
+                graph,
+                "user:app-user",
+                policy_node,
+                "attached",
+                "attached_to",
+                set(),
+            )
+
+        mmd = ig.render_iam_mermaid(graph)
+        self.assertNotIn("arn:aws:iam::123456789012:policy", mmd)
+        self.assertIn("n1", mmd)
+
 
 # ---------------------------------------------------------------------------
 # render_iam_html

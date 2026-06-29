@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -109,7 +108,7 @@ def build_iam_graph(iam_data: dict[str, Any]) -> IamGraph:
                 graph.nodes[principal_node] = {
                     "node_id": principal_node,
                     "kind": "principal",
-                    "label": principal_text,
+                    "label": _compact_principal_label(principal_text),
                     "metadata": {"principal": principal_text},
                 }
             _add_edge(graph, role_node, principal_node, "trusts", "trusts", seen_edges)
@@ -515,7 +514,7 @@ def _add_managed_policy_edges(
             if arn == ADMIN_POLICY_ARN or policy_name == "AdministratorAccess":
                 policy_node = "policy:AdministratorAccess"
             else:
-                policy_node = f"policy:{arn or policy_name}"
+                policy_node = f"policy:{policy_name}"
             _add_policy_node(graph, policy_node, policy_name, {"arn": arn, "managed": True})
             _add_edge(graph, principal_node, policy_node, "attached", "attached_to", seen_edges)
 
@@ -604,16 +603,23 @@ def _extract_principals_from_assume_doc(doc: dict[str, Any] | None) -> set[str]:
 def _mermaid_id(node_id: str, seen: dict[str, str]) -> str:
     if node_id in seen:
         return seen[node_id]
-    safe = re.sub(r"[^a-zA-Z0-9_]", "_", node_id)
-    if safe and safe[0].isdigit():
-        safe = f"n_{safe}"
-    candidate = safe
+    candidate = f"n{len(seen) + 1}"
     counter = 2
     while candidate in seen.values():
-        candidate = f"{safe}_{counter}"
+        candidate = f"n{len(seen) + counter}"
         counter += 1
     seen[node_id] = candidate
     return candidate
+
+
+def _compact_principal_label(principal: str, *, max_len: int = 64) -> str:
+    if len(principal) <= max_len:
+        return principal
+    if principal.startswith("arn:"):
+        suffix = principal.rsplit(":", 1)[-1]
+        prefix = "..."
+        return f"{prefix}{suffix}"[:max_len]
+    return f"{principal[: max_len - 3]}..."
 
 
 def _escape_mermaid(value: str) -> str:
