@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -128,14 +129,32 @@ def _run_all_sg_maps(
     return failures
 
 
+def _subprocess_env() -> dict[str, str]:
+    env = os.environ.copy()
+    aws_path = shutil.which("aws")
+    if aws_path:
+        aws_bin = str(Path(aws_path).parent)
+        env["PATH"] = f"{aws_bin}:{env.get('PATH', '')}"
+        env["AWS_CLI"] = aws_path
+    return env
+
+
 def _run_audit_iam_shell(profile: str | None, region: str, output_dir: Path) -> int:
     script = Path(__file__).resolve().parents[1] / "scripts" / "audit-iam.sh"
     if not script.exists():
         print(f"IAM shell audit script not found: {script}", file=sys.stderr)
         return 1
 
+    if shutil.which("aws") is None:
+        print(
+            "IAM shell audit skipped: aws CLI not found on PATH. "
+            "Install AWS CLI v2 or ensure it is available to account_check.",
+            file=sys.stderr,
+        )
+        return 1
+
     output_dir.mkdir(parents=True, exist_ok=True)
-    command = [str(script), "--region", region, "--output-dir", str(output_dir)]
+    command = ["bash", str(script), "--region", region, "--output-dir", str(output_dir)]
     if profile:
         command.extend(["--profile", profile])
 
@@ -146,6 +165,7 @@ def _run_audit_iam_shell(profile: str | None, region: str, output_dir: Path) -> 
             text=True,
             timeout=900,
             check=False,
+            env=_subprocess_env(),
         )
     except subprocess.TimeoutExpired:
         print("IAM shell audit timed out after 900 seconds.", file=sys.stderr)
