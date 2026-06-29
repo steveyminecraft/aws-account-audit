@@ -30,7 +30,10 @@ class TestCopyMapJsons(unittest.TestCase):
 
 
 class TestMainPipeline(unittest.TestCase):
-    @mock.patch("aws_account_audit.account_check.iam_graph_main")
+    @mock.patch("aws_account_audit.account_check.generate_iam_outputs")
+    @mock.patch("aws_account_audit.account_check.write_iam_data_json")
+    @mock.patch("aws_account_audit.account_check.collect_iam_relationship_data")
+    @mock.patch("aws_account_audit.account_check._run_audit_iam_shell")
     @mock.patch("aws_account_audit.account_check.account_graph_main")
     @mock.patch("aws_account_audit.account_check._copy_map_jsons")
     @mock.patch("aws_account_audit.account_check._run_all_sg_maps")
@@ -49,7 +52,10 @@ class TestMainPipeline(unittest.TestCase):
         run_all_sg_mock: mock.Mock,
         copy_map_jsons_mock: mock.Mock,
         account_graph_main_mock: mock.Mock,
-        iam_graph_main_mock: mock.Mock,
+        iam_shell_mock: mock.Mock,
+        collect_iam_mock: mock.Mock,
+        write_iam_data_mock: mock.Mock,
+        generate_iam_mock: mock.Mock,
     ) -> None:
         selected_regions_mock.return_value = ["us-east-2"]
         run_audit_mock.return_value = SimpleNamespace(metadata={"account_id": "123456789012"})
@@ -58,7 +64,9 @@ class TestMainPipeline(unittest.TestCase):
         run_all_sg_mock.return_value = 0
         copy_map_jsons_mock.return_value = 2
         account_graph_main_mock.return_value = 0
-        iam_graph_main_mock.return_value = 0
+        iam_shell_mock.return_value = 0
+        collect_iam_mock.return_value = {"account_id": "123456789012", "errors": []}
+        generate_iam_mock.return_value = SimpleNamespace(summary=lambda: {"node_count": 1})
 
         with tempfile.TemporaryDirectory() as d:
             output_dir = Path(d) / "runs"
@@ -77,11 +85,18 @@ class TestMainPipeline(unittest.TestCase):
             payload = json.loads(summary_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["account_id"], "123456789012")
             self.assertEqual(payload["copied_map_json_files"], 2)
+            self.assertIn("iam_audit_json", payload)
             run_audit_mock.assert_called_once()
             account_graph_main_mock.assert_called_once()
-            iam_graph_main_mock.assert_called_once()
+            collect_iam_mock.assert_called_once()
+            generate_iam_mock.assert_called_once()
+            iam_shell_mock.assert_called_once()
+            write_iam_data_mock.assert_called_once()
 
-    @mock.patch("aws_account_audit.account_check.iam_graph_main")
+    @mock.patch("aws_account_audit.account_check.generate_iam_outputs")
+    @mock.patch("aws_account_audit.account_check.write_iam_data_json")
+    @mock.patch("aws_account_audit.account_check.collect_iam_relationship_data")
+    @mock.patch("aws_account_audit.account_check._run_audit_iam_shell")
     @mock.patch("aws_account_audit.account_check.account_graph_main")
     @mock.patch("aws_account_audit.account_check._copy_map_jsons")
     @mock.patch("aws_account_audit.account_check._run_all_sg_maps")
@@ -100,7 +115,10 @@ class TestMainPipeline(unittest.TestCase):
         run_all_sg_mock: mock.Mock,
         copy_map_jsons_mock: mock.Mock,
         account_graph_main_mock: mock.Mock,
-        iam_graph_main_mock: mock.Mock,
+        iam_shell_mock: mock.Mock,
+        collect_iam_mock: mock.Mock,
+        write_iam_data_mock: mock.Mock,
+        generate_iam_mock: mock.Mock,
     ) -> None:
         selected_regions_mock.return_value = ["us-east-2"]
         run_audit_mock.return_value = SimpleNamespace(metadata={"account_id": "123456789012"})
@@ -109,7 +127,9 @@ class TestMainPipeline(unittest.TestCase):
         run_all_sg_mock.return_value = 0
         copy_map_jsons_mock.return_value = 0
         account_graph_main_mock.return_value = 0
-        iam_graph_main_mock.return_value = 0
+        iam_shell_mock.return_value = 0
+        collect_iam_mock.return_value = {"account_id": "123456789012", "errors": []}
+        generate_iam_mock.return_value = SimpleNamespace(summary=lambda: {"node_count": 0})
 
         with tempfile.TemporaryDirectory() as d:
             output_dir = Path(d) / "runs"
@@ -124,9 +144,12 @@ class TestMainPipeline(unittest.TestCase):
 
             self.assertEqual(rc, 1)
             account_graph_main_mock.assert_not_called()
-            iam_graph_main_mock.assert_not_called()
+            generate_iam_mock.assert_not_called()
 
-    @mock.patch("aws_account_audit.account_check.iam_graph_main")
+    @mock.patch("aws_account_audit.account_check.generate_iam_outputs")
+    @mock.patch("aws_account_audit.account_check.write_iam_data_json")
+    @mock.patch("aws_account_audit.account_check.collect_iam_relationship_data")
+    @mock.patch("aws_account_audit.account_check._run_audit_iam_shell")
     @mock.patch("aws_account_audit.account_check.account_graph_main")
     @mock.patch("aws_account_audit.account_check._copy_map_jsons")
     @mock.patch("aws_account_audit.account_check._run_all_sg_maps")
@@ -145,7 +168,10 @@ class TestMainPipeline(unittest.TestCase):
         run_all_sg_mock: mock.Mock,
         copy_map_jsons_mock: mock.Mock,
         account_graph_main_mock: mock.Mock,
-        iam_graph_main_mock: mock.Mock,
+        iam_shell_mock: mock.Mock,
+        collect_iam_mock: mock.Mock,
+        write_iam_data_mock: mock.Mock,
+        generate_iam_mock: mock.Mock,
     ) -> None:
         selected_regions_mock.return_value = ["us-east-2"]
         run_audit_mock.return_value = SimpleNamespace(metadata={"account_id": "123456789012"})
@@ -154,7 +180,9 @@ class TestMainPipeline(unittest.TestCase):
         run_all_sg_mock.return_value = 0
         copy_map_jsons_mock.return_value = 1
         account_graph_main_mock.return_value = 0
-        iam_graph_main_mock.return_value = 0
+        iam_shell_mock.return_value = 0
+        collect_iam_mock.return_value = {"account_id": "123456789012", "errors": []}
+        generate_iam_mock.return_value = SimpleNamespace(summary=lambda: {"node_count": 1})
 
         with tempfile.TemporaryDirectory() as d:
             output_dir = Path(d) / "runs"

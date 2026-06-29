@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import html
 import json
 import re
 import sys
@@ -11,6 +10,12 @@ from typing import Any
 
 from aws_account_audit.session import caller_identity, client, create_session, safe_call
 from aws_network_map.export import _render_png
+from aws_network_map.graph_style import (
+    IAM_LEGEND,
+    class_def_lines,
+    kind_class_for_iam,
+    render_interactive_html,
+)
 
 ADMIN_POLICY_ARN = "arn:aws:iam::aws:policy/AdministratorAccess"
 
@@ -113,14 +118,39 @@ def build_iam_graph(iam_data: dict[str, Any]) -> IamGraph:
     return graph
 
 
-def render_iam_mermaid(graph: IamGraph, *, direction: str = "LR") -> str:
+def render_iam_mermaid(graph: IamGraph, *, direction: str = "TB") -> str:
     lines = [f"flowchart {direction}"]
     mermaid_ids: dict[str, str] = {}
+    admin_nodes = _admin_node_ids(graph)
+
+    subgraph_order = [
+        ("user", "Users"),
+        ("group", "Groups"),
+        ("role", "Roles"),
+        ("policy", "Policies"),
+        ("principal", "Trust principals"),
+    ]
+    nodes_by_kind: dict[str, list[dict[str, Any]]] = {kind: [] for kind, _ in subgraph_order}
     for node in graph.nodes.values():
-        node_id = _mermaid_id(str(node.get("node_id", "")), mermaid_ids)
-        label = _escape_mermaid(str(node.get("label", node.get("node_id", "unknown"))))
-        shape = _shape_for_kind(str(node.get("kind", "")))
-        lines.append(f'    {node_id}{shape[0]}"{label}"{shape[1]}')
+        kind = str(node.get("kind", ""))
+        if kind in nodes_by_kind:
+            nodes_by_kind[kind].append(node)
+
+    for kind, title in subgraph_order:
+        nodes = sorted(nodes_by_kind[kind], key=lambda item: str(item.get("label", "")))
+        if not nodes:
+            continue
+        subgraph_id = _mermaid_id(f"subgraph_{kind}", mermaid_ids)
+        lines.append(f'    subgraph {subgraph_id}["{title}"]')
+        for node in nodes:
+            node_id = str(node.get("node_id", ""))
+            mid = _mermaid_id(node_id, mermaid_ids)
+            label = _escape_mermaid(str(node.get("label", node_id)))
+            shape = _shape_for_kind(kind)
+            css_class = kind_class_for_iam(kind, is_admin=node_id in admin_nodes)
+            class_suffix = f":::{css_class}" if css_class else ""
+            lines.append(f'        {mid}{shape[0]}"{label}"{shape[1]}{class_suffix}')
+        lines.append("    end")
 
     for edge in graph.edges:
         source = _mermaid_id(str(edge.get("source", "")), mermaid_ids)
@@ -128,39 +158,57 @@ def render_iam_mermaid(graph: IamGraph, *, direction: str = "LR") -> str:
         label = _escape_mermaid(str(edge.get("label", "")))
         lines.append(f'    {source} -->|"{label}"| {target}')
 
+    lines.extend(class_def_lines())
     return "\n".join(lines) + "\n"
 
 
-def render_iam_html(graph: IamGraph, *, direction: str = "LR") -> str:
+def render_iam_html(graph: IamGraph, *, direction: str = "TB") -> str:
     mermaid = render_iam_mermaid(graph, direction=direction)
     account_label = graph.account_id or "unknown-account"
-    title = html.escape(f"IAM relationship graph: {account_label}")
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>{title}</title>
-  <script type="module">
-    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-    mermaid.initialize({{ startOnLoad: true, theme: "neutral" }});
-  </script>
-  <style>
-    body {{ font-family: sans-serif; margin: 2rem; }}
-    pre {{ background: #f6f8fa; padding: 1rem; overflow-x: auto; }}
-  </style>
-</head>
-<body>
-  <h1>{title}</h1>
-  <p>Nodes: {len(graph.nodes)} | Edges: {len(graph.edges)}</p>
-  <pre class="mermaid">{html.escape(mermaid)}</pre>
-</body>
-</html>
-"""
+    summary = graph.summary()
+    subtitle = (
+        f"Account {account_label} | Users: {summary['user_count']} | "
+        f"Groups: {summary['group_count']} | Roles: {summary['role_count']} | "
+        f"Policies: {summary['policy_count']} | Edges: {summary['edge_count']}"
+    )
+    return render_interactive_html(
+        title=f"IAM relationship graph: {account_label}",
+        subtitle=subtitle,
+        mermaid=mermaid,
+        legend=IAM_LEGEND,
+    )
 
 
-def write_iam_html(graph: IamGraph, path: Path, *, direction: str = "LR") -> None:
+def write_iam_html(graph: IamGraph, path: Path, *, direction: str = "TB") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(render_iam_html(graph, direction=direction), encoding="utf-8")
+
+
+def write_iam_data_json(data: dict[str, Any], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def generate_iam_outputs(
+    *,
+    data: dict[str, Any],
+    output_base: Path,
+    direction: str = "TB",
+) -> IamGraph:
+    graph = build_iam_graph(data)
+    if graph.account_id is None:
+        graph.account_id = str(data.get("account_id") or "")
+
+    graph.errors.extend(data.get("errors", []))
+
+    output_base = output_base.with_suffix("")
+    write_iam_json(graph, output_base.with_suffix(".json"))
+    write_iam_html(graph, output_base.with_suffix(".html"), direction=direction)
+    try:
+        write_iam_png(graph, output_base.with_suffix(".png"), direction=direction)
+    except RuntimeError:
+        pass
+    return graph
 
 
 def write_iam_json(graph: IamGraph, path: Path) -> None:
@@ -177,7 +225,7 @@ def write_iam_json(graph: IamGraph, path: Path) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def write_iam_png(graph: IamGraph, path: Path, *, direction: str = "LR") -> None:
+def write_iam_png(graph: IamGraph, path: Path, *, direction: str = "TB") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     mmd_path = path.with_suffix(".mmd")
     mmd_path.write_text(render_iam_mermaid(graph, direction=direction), encoding="utf-8")
@@ -351,7 +399,7 @@ def main(argv: list[str] | None = None) -> int:
         "--region", default="eu-west-1", help="Home region (for STS identity lookup)"
     )
     parser.add_argument(
-        "--direction", choices=["LR", "TB"], default="LR", help="Mermaid diagram direction"
+        "--direction", choices=["LR", "TB"], default="TB", help="Mermaid diagram direction"
     )
     parser.add_argument(
         "--output-base",
@@ -362,26 +410,21 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     data = collect_iam_relationship_data(profile=args.profile, region=args.region)
-    graph = build_iam_graph(data)
-    if graph.account_id is None:
-        graph.account_id = str(data.get("account_id") or "")
-    graph.errors.extend(data.get("errors", []))
+    graph = generate_iam_outputs(
+        data=data,
+        output_base=args.output_base,
+        direction=args.direction,
+    )
 
     output_base = args.output_base.with_suffix("")
     json_path = output_base.with_suffix(".json")
     html_path = output_base.with_suffix(".html")
     png_path = output_base.with_suffix(".png")
 
-    write_iam_json(graph, json_path)
-    write_iam_html(graph, html_path, direction=args.direction)
-    try:
-        write_iam_png(graph, png_path, direction=args.direction)
-        print(f"Wrote IAM graph PNG: {png_path}", file=sys.stderr)
-    except RuntimeError as exc:
-        print(f"PNG export warning: {exc}", file=sys.stderr)
-
     print(f"Wrote IAM graph JSON: {json_path}", file=sys.stderr)
     print(f"Wrote IAM graph HTML: {html_path}", file=sys.stderr)
+    if png_path.exists():
+        print(f"Wrote IAM graph PNG: {png_path}", file=sys.stderr)
     s = graph.summary()
     print(
         f"IAM graph summary: nodes={s['node_count']} edges={s['edge_count']} errors={s['error_count']}",
@@ -573,6 +616,16 @@ def _escape_mermaid(value: str) -> str:
     escaped = escaped.replace("[", "(").replace("]", ")")
     escaped = escaped.replace("\n", " ").replace("\r", " ")
     return escaped
+
+
+def _admin_node_ids(graph: IamGraph) -> set[str]:
+    admin_nodes: set[str] = set()
+    for edge in graph.edges:
+        if edge.get("label") == "admin":
+            source = str(edge.get("source", ""))
+            if source:
+                admin_nodes.add(source)
+    return admin_nodes
 
 
 def _shape_for_kind(kind: str) -> tuple[str, str]:

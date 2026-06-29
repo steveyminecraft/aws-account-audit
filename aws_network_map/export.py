@@ -127,6 +127,12 @@ def _png_render_command(mermaid_source: Path, png_path: Path) -> list[str] | Non
         str(png_path),
         "-b",
         "white",
+        "-w",
+        "2800",
+        "-H",
+        "1800",
+        "-s",
+        "2",
         "-p",
         str(puppeteer_config),
     ]

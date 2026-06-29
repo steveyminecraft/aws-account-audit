@@ -124,7 +124,7 @@ The IAM graph includes:
 
 ## Account Check (All-In-One)
 
-For a single command that audits an account, maps resources, builds an account graph, and builds an IAM relationship graph:
+For a single command that audits an account, maps resources, builds an account graph, and runs a full IAM audit with relationship graphs:
 
 ```bash
 python -m aws_account_audit.account_check \
@@ -133,11 +133,26 @@ python -m aws_account_audit.account_check \
   --output-dir ./account-check-runs
 ```
 
-This writes grouped outputs under:
+This writes grouped outputs under `./account-check-runs/account-<account-id>/`:
 
-- `./account-check-runs/account-<account-id>/audit-runs/`
-- `./account-check-runs/account-<account-id>/network-maps/`
-- `./account-check-runs/account-<account-id>/account-check-summary.json`
+- `audit-runs/` — account inventory audit (`.json` + `.log`)
+- `iam-runs/` — IAM audit JSON, shell audit log, and IAM relationship graph (`.json`, `.html`, `.png`)
+- `network-maps/from-audit/` — per-resource network maps from audit findings (`.json`, `.html`, `.png`, `.md`)
+- `network-maps/all-security-groups/` — per-SG network maps for the whole account
+- `network-maps/account-graph-<account-id>.*` — merged account-wide network graph (`.json`, `.html`, `.png`)
+- `account-check-summary.json` — index of all generated artifacts
+
+Graphs use color-coded node types, grouped subgraphs, and a scrollable HTML viewer with legend. PNG exports render at higher resolution for readability.
+
+Optional flags:
+
+```bash
+# Skip the shell IAM audit script (keeps IAM JSON + graph)
+--skip-iam-shell-audit
+
+# Limit SG mapping volume on large accounts
+--max-security-groups 50
+```
 
 ---
 
