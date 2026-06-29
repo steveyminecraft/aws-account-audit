@@ -179,9 +179,7 @@ def render_markdown(
 def render_html(graph: NetworkGraph, *, direction: str = "LR") -> str:
     mermaid = render_mermaid(graph, direction=direction)
     title = f"Network map: {graph.root}"
-    subtitle = (
-        f"Region: {graph.region} | Nodes: {len(graph.nodes)} | Edges: {len(graph.edges)}"
-    )
+    subtitle = f"Region: {graph.region} | Nodes: {len(graph.nodes)} | Edges: {len(graph.edges)}"
     return render_interactive_html(
         title=title,
         subtitle=subtitle,
