@@ -115,7 +115,12 @@ def write_png(graph: AccountGraph, path: Path, *, direction: str = "LR") -> None
     path.parent.mkdir(parents=True, exist_ok=True)
     mmd_path = path.with_suffix(".mmd")
     mmd_path.write_text(render_account_mermaid(graph, direction=direction))
-    png_ok, png_error = _render_png(mmd_path, path)
+    png_ok, png_error = _render_png(
+        mmd_path,
+        path,
+        node_count=len(graph.nodes),
+        edge_count=len(graph.edges),
+    )
     mmd_path.unlink(missing_ok=True)
     if not png_ok:
         raise RuntimeError(png_error or "PNG export failed.")
