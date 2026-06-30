@@ -86,6 +86,10 @@ IAM_LEGEND: tuple[tuple[str, str], ...] = (
 # Mermaid rejects diagrams above 50k chars by default; account-wide maps exceed that.
 MERMAID_MAX_TEXT_SIZE = 900_000
 
+# Mermaid 11 caps edges at 500 by default (a secure config that cannot be set via an
+# in-diagram directive); account-wide graphs exceed that, so raise it at init time.
+MERMAID_MAX_EDGES = 100_000
+
 
 def class_def_lines(*, extra: dict[str, str] | None = None) -> list[str]:
     styles = dict(CLASS_DEFS)
@@ -255,6 +259,7 @@ def render_interactive_html(
     mermaid.initialize({{
       startOnLoad: true,
       maxTextSize: {MERMAID_MAX_TEXT_SIZE},
+      maxEdges: {MERMAID_MAX_EDGES},
       theme: "base",
       themeVariables: {{
         fontSize: "15px",
