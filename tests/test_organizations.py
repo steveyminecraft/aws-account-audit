@@ -93,6 +93,8 @@ class TestAssumeRoleCredentials(unittest.TestCase):
 
 
 class TestOrganizationScanMain(unittest.TestCase):
+    @mock.patch("aws_account_audit.session.create_session", return_value=mock.Mock())
+    @mock.patch("aws_account_audit.account_check.create_session", return_value=mock.Mock())
     @mock.patch("aws_account_audit.account_check._run_single_account_check")
     @mock.patch("aws_account_audit.account_check.assume_role_credentials")
     @mock.patch("aws_account_audit.account_check.list_organization_accounts")
@@ -103,6 +105,8 @@ class TestOrganizationScanMain(unittest.TestCase):
         list_mock: mock.Mock,
         assume_mock: mock.Mock,
         single_check_mock: mock.Mock,
+        _account_check_session: mock.Mock,
+        _session_module_session: mock.Mock,
     ) -> None:
         describe_mock.return_value = (
             OrganizationInfo(
