@@ -94,6 +94,7 @@ def render_account_index_html(
         ("Account network graph (JSON)", _path("account_graph_json"), False),
     ]
     audit_rows: list[ArtifactRow] = [
+        ("Resource inventory tables (interactive)", _path("inventory_html"), True),
         ("Account inventory audit (JSON)", _path("audit_json"), False),
         ("Account inventory audit (text)", _path("audit_text"), False),
         ("Resource inventory (JSON)", _path("inventory_json"), False),

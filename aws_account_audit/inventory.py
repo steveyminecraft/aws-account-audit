@@ -8,7 +8,9 @@ and text outputs stay unchanged.
 
 from __future__ import annotations
 
+import html as html_module
 import json
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from aws_account_audit.models import utc_now_iso
@@ -97,6 +99,188 @@ def render_inventory_report(
     lines.append("")
     lines.append(f"Inventory complete at {utc_now_iso()}")
     return "\n".join(lines) + "\n"
+
+
+def _inventory_table_html(spec: "_TableSpec", rows: list[dict[str, Any]]) -> str:
+    """Render one inventory category as an HTML table card."""
+    header_cells = "".join(f"<th>{html_module.escape(header)}</th>" for header in spec.headers)
+    body_rows: list[str] = []
+    for item in rows:
+        cells = "".join(f"<td>{html_module.escape(str(cell))}</td>" for cell in spec.row(item))
+        body_rows.append(f"<tr>{cells}</tr>")
+    table_id = html_module.escape(spec.category)
+    return (
+        f'<section class="card" id="{table_id}">'
+        f"<h2>{html_module.escape(spec.title)} "
+        f'<span class="count">{len(rows)}</span></h2>'
+        f'<div class="table-wrap"><table>'
+        f"<thead><tr>{header_cells}</tr></thead>"
+        f"<tbody>{''.join(body_rows)}</tbody>"
+        f"</table></div></section>"
+    )
+
+
+def render_inventory_html(
+    metadata: dict[str, Any],
+    inventory: dict[str, list[dict[str, Any]]],
+    *,
+    errors: list[str] | None = None,
+    generated_at: datetime | None = None,
+) -> str:
+    """Render the resource inventory as a self-contained HTML page with tables."""
+    account_id = str(metadata.get("account_id") or "unknown-account")
+    generated_at = generated_at or datetime.now(timezone.utc)
+    generated_label = generated_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+    regions = ", ".join(metadata.get("regions_scanned", []) or []) or "-"
+
+    counts = {category: len(inventory.get(category, [])) for category in CATEGORIES}
+    total = sum(counts.values())
+
+    stat_pairs: list[tuple[str, Any]] = [("Account", account_id), ("Total resources", total)]
+    cards: list[str] = []
+    for spec in _TABLE_SPECS:
+        rows = inventory.get(spec.category, []) or []
+        stat_pairs.append((spec.title, len(rows)))
+        if rows:
+            cards.append(_inventory_table_html(spec, rows))
+
+    if not cards:
+        cards.append(
+            '<section class="card"><p class="empty">No resources discovered '
+            "(check credentials, regions, or permissions).</p></section>"
+        )
+
+    if errors:
+        error_items = "".join(f"<li>{html_module.escape(str(error))}</li>" for error in errors)
+        cards.append(
+            '<section class="card errors"><h2>Collection errors '
+            f'<span class="count">{len(errors)}</span></h2>'
+            f"<ul>{error_items}</ul></section>"
+        )
+
+    stats_html = "".join(
+        f'<div class="stat"><span class="stat-value">{html_module.escape(str(value))}</span>'
+        f'<span class="stat-label">{html_module.escape(str(label))}</span></div>'
+        for label, value in stat_pairs
+    )
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Resource inventory: {html_module.escape(account_id)}</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #f8fafc;
+      --panel: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --accent: #0d9488;
+      --row-alt: #f1f5f9;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: Inter, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.5;
+    }}
+    header {{
+      padding: 1.5rem;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }}
+    h1 {{ margin: 0 0 0.35rem; font-size: 1.5rem; }}
+    .subtitle {{ margin: 0; color: var(--muted); font-size: 0.9rem; }}
+    .stats {{ display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1rem; }}
+    .stat {{
+      display: flex;
+      flex-direction: column;
+      padding: 0.45rem 0.8rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+      min-width: 5rem;
+    }}
+    .stat-value {{ font-size: 1.15rem; font-weight: 600; }}
+    .stat-label {{ font-size: 0.72rem; color: var(--muted); text-transform: uppercase; }}
+    .filter {{
+      margin-top: 1rem;
+      width: 100%;
+      max-width: 28rem;
+      padding: 0.55rem 0.8rem;
+      font-size: 0.95rem;
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+    }}
+    main {{ display: flex; flex-direction: column; gap: 1rem; padding: 1.25rem; }}
+    .card {{
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1rem 1.25rem;
+    }}
+    .card h2 {{ margin: 0 0 0.6rem; font-size: 1.05rem; display: flex; align-items: center; }}
+    .count {{
+      margin-left: 0.5rem;
+      padding: 0.05rem 0.5rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--accent);
+      background: #ccfbf1;
+      border-radius: 0.5rem;
+    }}
+    .table-wrap {{ overflow-x: auto; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 0.85rem; }}
+    th, td {{ padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid var(--border); }}
+    th {{
+      position: sticky;
+      top: 0;
+      background: var(--panel);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: var(--muted);
+    }}
+    tbody tr:nth-child(even) {{ background: var(--row-alt); }}
+    tbody tr.hidden {{ display: none; }}
+    .empty {{ color: var(--muted); font-style: italic; margin: 0; }}
+    .errors .count {{ color: #b91c1c; background: #fee2e2; }}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Resource inventory: {html_module.escape(account_id)}</h1>
+    <p class="subtitle">
+      {html_module.escape(str(total))} resources &middot; regions: {html_module.escape(regions)}
+      &middot; generated {generated_label}
+    </p>
+    <div class="stats">{stats_html}</div>
+    <input class="filter" type="search" placeholder="Filter rows (name, type, id, region)..."
+      oninput="filterInventory(this.value)" aria-label="Filter inventory rows">
+  </header>
+  <main>
+    {"".join(cards)}
+  </main>
+  <script>
+    function filterInventory(query) {{
+      const needle = query.trim().toLowerCase();
+      document.querySelectorAll('tbody tr').forEach(function (row) {{
+        const match = !needle || row.textContent.toLowerCase().includes(needle);
+        row.classList.toggle('hidden', !match);
+      }});
+    }}
+  </script>
+</body>
+</html>
+"""
 
 
 def build_inventory_graph(
@@ -191,12 +375,21 @@ def write_inventory_files(
     payload = inventory_to_dict(metadata, inventory, errors=errors)
     json_path = output_dir / f"{base_name}-inventory.json"
     text_path = output_dir / f"{base_name}-inventory.log"
+    html_path = output_dir / f"{base_name}-inventory.html"
     json_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
     text_path.write_text(
         render_inventory_report(metadata, inventory, errors=errors),
         encoding="utf-8",
     )
-    return {"inventory_json": json_path, "inventory_text": text_path}
+    html_path.write_text(
+        render_inventory_html(metadata, inventory, errors=errors),
+        encoding="utf-8",
+    )
+    return {
+        "inventory_json": json_path,
+        "inventory_text": text_path,
+        "inventory_html": html_path,
+    }
 
 
 def _collect_regional_inventory(

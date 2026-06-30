@@ -355,6 +355,7 @@ def main(argv: list[str] | None = None) -> int:
         "audit_text": str(written["text"]),
         "inventory_json": str(written.get("inventory_json", "")),
         "inventory_text": str(written.get("inventory_text", "")),
+        "inventory_html": str(written.get("inventory_html", "")),
         "iam_audit_json": str(iam_audit_json),
         "iam_shell_audit_rc": iam_shell_rc,
         "iam_graph_json": str(iam_graph_base.with_suffix(".json")),

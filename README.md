@@ -81,11 +81,14 @@ Reports are written to `--output-dir` (default: `./audit-runs`):
 - `audit-<account-id>-<timestamp>.log` — human-readable audit summary (unchanged)
 - `audit-<account-id>-<timestamp>-inventory.json` — detailed resource inventory (additive)
 - `audit-<account-id>-<timestamp>-inventory.log` — human-readable resource inventory tables (additive)
+- `audit-<account-id>-<timestamp>-inventory.html` — interactive resource inventory tables with a live filter (additive)
 
 The standard audit JSON and log outputs are unchanged. When inventory collection is enabled
-(default), two additional files list EC2 instances, EBS volumes, RDS instances, load
-balancers (ELB), Lambda functions, S3 buckets, and DynamoDB tables with location, size,
-type, and version where they apply. Disable with `--no-inventory`.
+(default), additional files list EC2 instances, EBS volumes, RDS instances, load balancers
+(ELB), Lambda functions, S3 buckets, and DynamoDB tables with location, size, type, and
+version where they apply. The `-inventory.html` page renders each resource type as a sortable,
+zebra-striped table with summary counts and a search box to filter rows across all tables.
+Disable inventory with `--no-inventory`.
 
 ## Permissions
 
@@ -181,6 +184,7 @@ This writes grouped outputs under `./account-check-runs/account-<account-id>/`:
 - `network-maps/from-audit/` — per-resource network maps from audit findings (`.json`, `.html`, `.png`, `.md`)
 - `network-maps/all-security-groups/` — per-SG network maps for the whole account
 - `network-maps/account-graph-<account-id>.*` — merged account-wide network graph (`.json`, `.html`, `.png`), including resource-inventory nodes
+- `audit-runs/*-inventory.html` — interactive resource inventory tables (linked from `account-view.html`)
 - `network-maps/combined-json/resource-inventory-overlay.json` — inventory nodes/edges merged into the account graph
 - `account-check-summary.json` — machine-readable index of all generated artifacts
 
