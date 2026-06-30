@@ -121,6 +121,7 @@ def _render_png(
     *,
     node_count: int | None = None,
     edge_count: int | None = None,
+    scale_override: float | None = None,
 ) -> tuple[bool, str | None]:
     png_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -130,6 +131,10 @@ def _render_png(
         )
 
     width, height, scale, timeout_seconds = compute_png_dimensions(node_count, edge_count)
+    if scale_override is not None and scale_override > 0:
+        scale = float(scale_override)
+        # High-resolution renders take longer; give the renderer more headroom.
+        timeout_seconds = max(timeout_seconds, min(1200, int(120 + scale * 90)))
     command = _png_render_command(
         mermaid_source,
         png_path,

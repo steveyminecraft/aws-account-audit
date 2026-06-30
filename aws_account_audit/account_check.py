@@ -8,6 +8,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from aws_account_audit.account_index import (
+    collect_network_map_links,
+    write_account_index_html,
+)
 from aws_account_audit.audit import run_audit, write_report
 from aws_account_audit.iam_graph import (
     collect_iam_relationship_data,
@@ -63,7 +67,35 @@ def build_parser() -> argparse.ArgumentParser:
         "--direction",
         choices=["LR", "TB"],
         default="TB",
-        help="Mermaid direction for generated graphs (default: TB)",
+        help="Mermaid direction for generated network graphs (default: TB)",
+    )
+    parser.add_argument(
+        "--iam-direction",
+        choices=["LR", "TB"],
+        default="LR",
+        help=(
+            "Mermaid direction for the IAM relationship graph (default: LR). "
+            "LR keeps the PNG readable; TB produces a very wide image when an "
+            "account has many policies."
+        ),
+    )
+    parser.add_argument(
+        "--iam-png-scale",
+        type=float,
+        default=None,
+        help=(
+            "Override the IAM PNG render scale to produce one large, zoomable image "
+            "(e.g. 4 or 6). Larger values are sharper but much bigger on disk."
+        ),
+    )
+    parser.add_argument(
+        "--iam-sections",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Slice the IAM PNG into overlapping, readable section tiles "
+            "(default: enabled). Use --no-iam-sections to skip."
+        ),
     )
     return parser
 
@@ -274,9 +306,15 @@ def main(argv: list[str] | None = None) -> int:
     iam_graph = generate_iam_outputs(
         data=iam_data,
         output_base=iam_graph_base,
-        direction=args.direction,
+        direction=args.iam_direction,
+        png_scale=args.iam_png_scale,
+        sections=args.iam_sections,
     )
     iam_graph_rc = 0
+    iam_sections_dir = Path(f"{iam_graph_base}-sections")
+    iam_section_files = (
+        sorted(iam_sections_dir.glob("section-*.png")) if iam_sections_dir.exists() else []
+    )
 
     summary = {
         "account_id": account_id,
@@ -287,6 +325,7 @@ def main(argv: list[str] | None = None) -> int:
         "iam_graph_json": str(iam_graph_base.with_suffix(".json")),
         "iam_graph_html": str(iam_graph_base.with_suffix(".html")),
         "iam_graph_png": str(iam_graph_base.with_suffix(".png")),
+        "iam_graph_sections": [str(path) for path in iam_section_files],
         "iam_graph_summary": iam_graph.summary(),
         "iam_graph_rc": iam_graph_rc,
         "from_audit_rc": from_audit_rc,
@@ -297,10 +336,19 @@ def main(argv: list[str] | None = None) -> int:
         "account_graph_png": str(account_graph_base.with_suffix(".png")),
         "account_graph_rc": account_graph_rc,
     }
+    network_links = collect_network_map_links(network_dir)
+    index_path = write_account_index_html(
+        summary=summary,
+        run_dir=run_dir,
+        network_links=network_links,
+    )
+    summary["account_view_html"] = str(index_path)
+
     summary_path = run_dir / "account-check-summary.json"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"Wrote account check summary: {summary_path}")
+    print(f"Wrote full account view: {index_path}")
 
     if (
         account_graph_rc != 0

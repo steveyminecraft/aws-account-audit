@@ -113,6 +113,18 @@ Outputs:
 - `<output-base>.json` - graph data for automation
 - `<output-base>.html` - interactive Mermaid graph
 - `<output-base>.png` - rendered image
+- `<output-base>-sections/section-*.png` - the PNG sliced into overlapping, zoom-friendly tiles (large graphs only)
+
+For large accounts the single PNG is tall; two ways to read the detail:
+
+```bash
+# One large, zoomable PNG (sharper, but a big file)
+python -m aws_account_audit.iam_graph --output-base ./network-maps/iam-graph --png-scale 4
+
+# Overlapping section tiles are written by default for large graphs.
+# Disable them with:
+python -m aws_account_audit.iam_graph --output-base ./network-maps/iam-graph --no-sections
+```
 
 The IAM graph includes:
 
@@ -121,6 +133,12 @@ The IAM graph includes:
 - User->group membership links
 - Principal->policy attachment links
 - Role trust relationships (role->trusted principal)
+
+The graph defaults to left-to-right (`LR`) layout. Because IAM nodes are grouped into
+per-kind subgraphs (Users / Groups / Roles / Policies / Trust principals), a top-to-bottom
+(`TB`) layout spreads the policy row across tens of thousands of pixels and produces a PNG
+that looks horizontally cut off. `LR` keeps the PNG readable. Pass `--direction TB` to
+override. For very large accounts, open the `.html` file for full pan/zoom instead of the PNG.
 
 ## Account Check (All-In-One)
 
@@ -135,14 +153,19 @@ python -m aws_account_audit.account_check \
 
 This writes grouped outputs under `./account-check-runs/account-<account-id>/`:
 
+- `account-view.html` — single full account view that links every artifact below (start here)
 - `audit-runs/` — account inventory audit (`.json` + `.log`)
-- `iam-runs/` — IAM audit JSON, shell audit log, and IAM relationship graph (`.json`, `.html`, `.png`)
+- `iam-runs/` — IAM audit JSON, shell audit log, IAM relationship graph (`.json`, `.html`, `.png`), and `iam-graph-<account-id>-sections/` zoom-friendly PNG tiles
 - `network-maps/from-audit/` — per-resource network maps from audit findings (`.json`, `.html`, `.png`, `.md`)
 - `network-maps/all-security-groups/` — per-SG network maps for the whole account
 - `network-maps/account-graph-<account-id>.*` — merged account-wide network graph (`.json`, `.html`, `.png`)
-- `account-check-summary.json` — index of all generated artifacts
+- `account-check-summary.json` — machine-readable index of all generated artifacts
 
-Graphs use color-coded node types, grouped subgraphs, and a scrollable HTML viewer with legend. PNG exports scale viewport size and render resolution with graph size so large account maps stay sharp when zoomed.
+`account-view.html` is a self-contained page that summarizes the account and links the
+interactive HTML graphs (marked "full view"), PNGs, and JSON/text reports. Open it in a
+browser to navigate the whole run without depending on the static PNGs.
+
+Graphs use color-coded node types, grouped subgraphs, and a scrollable HTML viewer with legend. PNG exports scale viewport size and render resolution with graph size so large account maps stay sharp when zoomed. The IAM relationship graph defaults to `LR` layout so its PNG stays readable; network graphs default to `TB`.
 
 Optional flags:
 
@@ -152,6 +175,18 @@ Optional flags:
 
 # Limit SG mapping volume on large accounts
 --max-security-groups 50
+
+# Mermaid direction for network graphs (default: TB)
+--direction LR
+
+# Mermaid direction for the IAM relationship graph (default: LR)
+--iam-direction TB
+
+# Render the IAM PNG as one large, zoomable image instead of default resolution
+--iam-png-scale 4
+
+# Skip slicing the IAM PNG into section tiles
+--no-iam-sections
 ```
 
 ---
