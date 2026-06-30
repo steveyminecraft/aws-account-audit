@@ -53,6 +53,7 @@ def safe_call(
             "NoSuchEntity",
             "ResourceNotFoundException",
             "NoSuchPublicAccessBlockConfiguration",
+            "NoSuchBucketPolicy",
         }:
             return None, None
         return None, f"{label}: {code} - {exc.response['Error'].get('Message', str(exc))}"
