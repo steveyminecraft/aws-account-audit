@@ -10,6 +10,31 @@ from botocore.exceptions import ClientError, EndpointConnectionError
 DEFAULT_REGION = "eu-west-1"
 BOTO_CONFIG = Config(retries={"max_attempts": 10, "mode": "standard"})
 
+# ClientError codes that mean "optional resource/config is absent" for not_found_ok calls.
+NOT_FOUND_ERROR_CODES = frozenset(
+    {
+        "NoSuchEntity",
+        "ResourceNotFoundException",
+        "NoSuchPublicAccessBlockConfiguration",
+        "NoSuchBucketPolicy",
+    }
+)
+
+# Extra codes for S3 policy-status lookups (directory buckets, unsupported APIs).
+S3_POLICY_STATUS_ABSENT_CODES = NOT_FOUND_ERROR_CODES | frozenset(
+    {
+        "NotImplemented",
+        "UnsupportedOperation",
+        "MethodNotAllowed",
+    }
+)
+
+S3_POLICY_STATUS_ABSENT_HINTS = (
+    "bucket policy does not exist",
+    "not supported for directory buckets",
+    "not supported by directory buckets",
+)
+
 
 def create_session(profile: str | None = None) -> boto3.Session:
     if profile:
@@ -44,20 +69,43 @@ def safe_call(
     func: Any,
     *,
     not_found_ok: bool = False,
+    not_found_codes: frozenset[str] | None = None,
+    not_found_hints: tuple[str, ...] = (),
 ) -> tuple[Any | None, str | None]:
     try:
         return func(), None
     except ClientError as exc:
         code = exc.response.get("Error", {}).get("Code", "")
-        if not_found_ok and code in {
-            "NoSuchEntity",
-            "ResourceNotFoundException",
-            "NoSuchPublicAccessBlockConfiguration",
-            "NoSuchBucketPolicy",
-        }:
+        message = exc.response.get("Error", {}).get("Message", "")
+        codes = not_found_codes
+        if codes is None and not_found_ok:
+            codes = NOT_FOUND_ERROR_CODES
+        if codes and code in codes:
             return None, None
-        return None, f"{label}: {code} - {exc.response['Error'].get('Message', str(exc))}"
+        if (
+            not_found_ok
+            and not_found_hints
+            and any(hint.lower() in message.lower() for hint in not_found_hints)
+        ):
+            return None, None
+        return None, f"{label}: {code} - {message or str(exc)}"
     except EndpointConnectionError as exc:
         return None, f"{label}: endpoint unavailable - {exc}"
     except Exception as exc:  # noqa: BLE001 - audit tool must continue on partial failures
         return None, f"{label}: {exc}"
+
+
+def get_bucket_policy_status(
+    s3: Any,
+    bucket_name: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Return PolicyStatus for a bucket, treating absent/unsupported policy as None."""
+    return safe_call(
+        f"s3.get_bucket_policy_status({bucket_name})",
+        lambda bucket_name=bucket_name: s3.get_bucket_policy_status(Bucket=bucket_name).get(
+            "PolicyStatus"
+        ),
+        not_found_ok=True,
+        not_found_codes=S3_POLICY_STATUS_ABSENT_CODES,
+        not_found_hints=S3_POLICY_STATUS_ABSENT_HINTS,
+    )

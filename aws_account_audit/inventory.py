@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from aws_account_audit.models import utc_now_iso
-from aws_account_audit.session import client, safe_call
+from aws_account_audit.session import client, get_bucket_policy_status, safe_call
 
 # Inventory categories in display order.
 CATEGORIES: tuple[str, ...] = (
@@ -529,11 +529,7 @@ def _collect_s3_buckets(session: Any, home_region: str) -> tuple[list[dict[str, 
                 s3.get_bucket_location(Bucket=name).get("LocationConstraint") or "us-east-1"
             ),
         )
-        policy_status, policy_status_error = safe_call(
-            f"s3.get_bucket_policy_status({name})",
-            lambda name=name: s3.get_bucket_policy_status(Bucket=name).get("PolicyStatus"),
-            not_found_ok=True,
-        )
+        policy_status, policy_status_error = get_bucket_policy_status(s3, name)
         for error in (location_error, policy_status_error):
             if error:
                 errors.append(error)
@@ -559,7 +555,7 @@ def _collect_waf_web_acls(
 ) -> tuple[list[dict[str, Any]], str | None]:
     summaries, error = safe_call(
         f"wafv2.list_web_acls({scope},{region})",
-        lambda: _paginate_waf(waf.list_web_acls, scope=scope),
+        lambda: _list_waf_web_acl_summaries(waf, scope=scope),
     )
     if error:
         return [], error
@@ -587,14 +583,18 @@ def _collect_waf_web_acls(
     return details, combined_error
 
 
-def _paginate_waf(func: Callable[..., Any], *, scope: str) -> list[dict[str, Any]]:
+def _list_waf_web_acl_summaries(waf: Any, *, scope: str) -> list[dict[str, Any]]:
+    """List WAF Web ACL summaries for ``scope`` (REGIONAL or CLOUDFRONT).
+
+    WAFv2 pagination uses ``NextMarker`` (not ``Marker``).
+    """
     items: list[dict[str, Any]] = []
     next_marker: str | None = None
     while True:
-        params: dict[str, Any] = {"Scope": scope, "Limit": 100}
+        params: dict[str, Any] = {"Scope": scope}
         if next_marker:
             params["NextMarker"] = next_marker
-        response = func(**params)
+        response = waf.list_web_acls(**params)
         items.extend(response.get("WebACLs", []))
         next_marker = response.get("NextMarker")
         if not next_marker:

@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from aws_account_audit import __version__
+from aws_account_audit import inventory as inventory_module
 from aws_account_audit.account_index import (
     collect_network_map_links,
     write_account_index_html,
@@ -28,6 +30,11 @@ from aws_network_map.from_audit import main as from_audit_main
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run a full account check with audit, resource maps, and IAM graph outputs.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     parser.add_argument("--profile", help="AWS profile name")
     parser.add_argument("--region", default="eu-west-1", help="Home region (default: eu-west-1)")
@@ -246,6 +253,11 @@ def _copy_map_jsons(source_dirs: list[Path], destination: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    print(
+        f"aws-account-audit {__version__} (inventory: {inventory_module.__file__})",
+        file=sys.stderr,
+    )
 
     selected_regions = _selected_regions(args.profile, args.region, args.regions, args.all_regions)
     report = run_audit(
