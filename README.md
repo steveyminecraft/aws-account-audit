@@ -209,7 +209,8 @@ management account uses your caller credentials directly; member accounts are sc
 `sts:AssumeRole`. Org-level indexes are written to
 `./account-check-runs/organization-<org-id>/organization-check-summary.json` and
 `./account-check-runs/organization-<org-id>/organization-view.html` (links into each
-account's `account-view.html` with finding counts).
+account's `account-view.html` and `findings.html` with finding counts). Org-wide findings
+are on `organization-findings.html` in the same directory.
 
 Optional filters:
 
@@ -223,7 +224,8 @@ python -m aws_account_audit.account_check --scan-organization --org-exclude-acco
 
 This writes grouped outputs under `./account-check-runs/account-<account-id>/`:
 
-- `account-view.html` — single full account view that links every artifact below (start here)
+- `account-view.html` — full account view with artifact lists and severity summary (start here)
+- `findings.html` — dedicated security findings page (linked from account view)
 - `audit-runs/` — account inventory audit (`.json` + `.log`)
 - `iam-runs/` — IAM audit JSON, shell audit log, IAM relationship graph (`.json`, `.html`, `.png`), and `iam-graph-<account-id>-sections/` zoom-friendly PNG tiles
 - `network-maps/from-audit/` — per-resource network maps from audit findings (`.json`, `.html`, `.png`, `.md`)
@@ -238,9 +240,9 @@ DynamoDB) as nodes grouped under per-region anchors, with labels carrying locati
 type, and version. These appear in the `Compute`, `Storage`, `Load balancers`, and `Regions`
 subgraphs of the account-graph PNG/HTML. Disable the overlay with `--no-inventory-graph`.
 
-`account-view.html` is a self-contained page that summarizes the account and links the
-interactive HTML graphs (marked "full view"), PNGs, and JSON/text reports. Open it in a
-browser to navigate the whole run without depending on the static PNGs.
+`account-view.html` summarizes the account, links every artifact (interactive HTML graphs
+marked "full view"), and links to `findings.html` for the detailed security findings list.
+Open it in a browser to navigate the whole run without depending on the static PNGs.
 
 Graphs use color-coded node types, grouped subgraphs, and a scrollable HTML viewer with legend. The interactive HTML graphs are click-to-explore: click any node to highlight its full connected chain (and dim everything else), then click empty space or press `Esc` to reset. PNG exports scale viewport size and render resolution with graph size so large account maps stay sharp when zoomed. The IAM relationship graph defaults to `LR` layout so its PNG stays readable; network graphs default to `TB`.
 

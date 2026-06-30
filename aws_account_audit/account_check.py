@@ -433,18 +433,20 @@ def _run_single_account_check(
         "account_graph_rc": account_graph_rc,
     }
     network_links = collect_network_map_links(network_dir)
-    index_path = write_account_index_html(
+    index_path, findings_path = write_account_index_html(
         summary=summary,
         run_dir=run_dir,
         network_links=network_links,
     )
     summary["account_view_html"] = str(index_path)
+    summary["findings_html"] = str(findings_path)
 
     summary_path = run_dir / "account-check-summary.json"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"Wrote account check summary: {summary_path}")
     print(f"Wrote full account view: {index_path}")
+    print(f"Wrote security findings: {findings_path}")
 
     exit_code = 0
     if (
@@ -556,15 +558,17 @@ def _run_organization_scan(
         "accounts": account_results,
     }
     org_summary_path = org_dir / "organization-check-summary.json"
-    org_view_path = write_organization_index_html(
+    org_view_path, org_findings_path = write_organization_index_html(
         org_summary=org_summary,
         org_dir=org_dir,
         output_dir=args.output_dir,
     )
     org_summary["organization_view_html"] = str(org_view_path)
+    org_summary["organization_findings_html"] = str(org_findings_path)
     org_summary_path.write_text(json.dumps(org_summary, indent=2), encoding="utf-8")
     print(f"Wrote organization check summary: {org_summary_path}", file=sys.stderr)
     print(f"Wrote organization view: {org_view_path}", file=sys.stderr)
+    print(f"Wrote organization findings: {org_findings_path}", file=sys.stderr)
     return 1 if failures else 0
 
 
