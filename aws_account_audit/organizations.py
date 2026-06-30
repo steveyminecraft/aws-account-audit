@@ -51,7 +51,10 @@ def describe_organization(session: Any, region: str) -> tuple[OrganizationInfo |
     organization_id = str(org.get("Id") or "")
     master_account_id = str(org.get("MasterAccountId") or "")
     if not organization_id or not master_account_id:
-        return None, "organizations.describe_organization: missing organization or master account id"
+        return (
+            None,
+            "organizations.describe_organization: missing organization or master account id",
+        )
     return (
         OrganizationInfo(
             organization_id=organization_id,

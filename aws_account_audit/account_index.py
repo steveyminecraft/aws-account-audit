@@ -112,7 +112,8 @@ _SEVERITY_STYLES = """
     }
 """
 
-_PAGE_BASE_STYLES = """
+_PAGE_BASE_STYLES = (
+    """
     :root {
       color-scheme: light;
       --bg: #f8fafc;
@@ -140,7 +141,9 @@ _PAGE_BASE_STYLES = """
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
     .muted { color: var(--muted); font-style: italic; }
-""" + _SEVERITY_STYLES
+"""
+    + _SEVERITY_STYLES
+)
 
 
 def _findings_page_html(
@@ -324,9 +327,7 @@ def _severity_badges(
         )
         href = link_for_severity(severity) if link_for_severity else None
         if href:
-            badge = (
-                f'<a class="severity-link" href="{html_module.escape(href)}">{badge}</a>'
-            )
+            badge = f'<a class="severity-link" href="{html_module.escape(href)}">{badge}</a>'
         badges.append(badge)
     return " ".join(badges) if badges else '<span class="muted">none</span>'
 
@@ -617,9 +618,7 @@ def render_account_index_html(
     findings_href = _findings_href_for_summary(summary, run_dir)
     findings_summary_html = _severity_badges(
         findings_by_severity,
-        link_for_severity=lambda severity: (
-            f"{findings_href}#{_severity_anchor(severity)}"
-        ),
+        link_for_severity=lambda severity: f"{findings_href}#{_severity_anchor(severity)}",
     )
 
     artifact_sections = _account_artifact_sections(
@@ -650,9 +649,7 @@ def render_account_index_html(
         for label, value in stat_pairs
     )
 
-    section_cards = [
-        _section_html(title, rows, run_dir) for title, rows in artifact_sections
-    ]
+    section_cards = [_section_html(title, rows, run_dir) for title, rows in artifact_sections]
     sections = "".join(section_cards)
 
     generated_label = generated_at.strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -821,9 +818,7 @@ def _scan_status_badge(scan_status: str | None) -> str:
         "failed": "failed",
         "assume_role_failed": "blocked",
     }.get(status, "unknown")
-    return (
-        f'<span class="scan-status {css}">{html_module.escape(status.replace("_", " "))}</span>'
-    )
+    return f'<span class="scan-status {css}">{html_module.escape(status.replace("_", " "))}</span>'
 
 
 def render_organization_index_html(
@@ -898,9 +893,7 @@ def render_organization_index_html(
                 f"../account-{account_id}/findings.html"
             )
             if rel_view and account_view is not None:
-                link_cell = (
-                    f'<a href="{html_module.escape(rel_view)}">Open account view</a>'
-                )
+                link_cell = f'<a href="{html_module.escape(rel_view)}">Open account view</a>'
             else:
                 link_cell = '<span class="muted">account view not generated</span>'
 
@@ -931,9 +924,7 @@ def render_organization_index_html(
         )
 
     if not account_rows:
-        account_rows.append(
-            '<tr><td colspan="6" class="muted">No accounts were scanned.</td></tr>'
-        )
+        account_rows.append('<tr><td colspan="6" class="muted">No accounts were scanned.</td></tr>')
 
     summary_json = _rel(org_dir / "organization-check-summary.json", org_dir) or (
         "organization-check-summary.json"
@@ -959,9 +950,7 @@ def render_organization_index_html(
     organization_arn = html_module.escape(str(org_summary.get("organization_arn") or "—"))
     org_findings_summary_html = _severity_badges(
         org_findings_by_severity,
-        link_for_severity=lambda severity: (
-            f"{org_findings_rel}#{_severity_anchor(severity)}"
-        ),
+        link_for_severity=lambda severity: f"{org_findings_rel}#{_severity_anchor(severity)}",
     )
 
     return f"""<!DOCTYPE html>
@@ -1096,7 +1085,7 @@ def render_organization_index_html(
           </tr>
         </thead>
         <tbody>
-          {''.join(account_rows)}
+          {"".join(account_rows)}
         </tbody>
       </table>
       <p class="footer">

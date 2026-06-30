@@ -153,8 +153,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--org-role-name",
         default=DEFAULT_ORG_ROLE_NAME,
         help=(
-            "IAM role name to assume in each member account "
-            f"(default: {DEFAULT_ORG_ROLE_NAME})."
+            f"IAM role name to assume in each member account (default: {DEFAULT_ORG_ROLE_NAME})."
         ),
     )
     parser.add_argument(
