@@ -20,6 +20,18 @@ Read-only Python tool that inventories AWS account resources and produces a secu
 - RDS instances and DynamoDB tables
 - S3 buckets (global), Route53 hosted zones, CloudFormation stacks
 
+Per-resource detail captured for the inventory listing (location, size, type, version as applicable):
+
+| Resource | Location | Size | Type | Version |
+|----------|----------|------|------|---------|
+| EC2 instance | Availability zone | instance type | instance type / platform | AMI / platform details |
+| EBS volume | Availability zone | size (GiB) | volume type (gp3, io2, ...) | — |
+| RDS instance | Availability zone | allocated storage (GiB) | instance class | engine + engine version |
+| Load balancer (ELB) | Availability zones | — | application / network / classic | — |
+| Lambda function | Region | memory (MB) + code size | architecture (x86_64 / arm64) | runtime + published version |
+| S3 bucket | Region | — | — | — |
+| DynamoDB table | Region | — | — | — |
+
 **Findings**
 - Missing password policy or GuardDuty
 - AdministratorAccess on IAM principals
@@ -56,14 +68,24 @@ python -m aws_account_audit --profile my-profile --sections identity iam securit
 
 # Print report to stdout
 python -m aws_account_audit --profile my-profile --stdout
+
+# Skip the separate resource inventory files
+python -m aws_account_audit --profile my-profile --no-inventory
 ```
 
 ## Output
 
 Reports are written to `--output-dir` (default: `./audit-runs`):
 
-- `audit-<account-id>-<timestamp>.json` — structured data for automation
-- `audit-<account-id>-<timestamp>.log` — human-readable summary
+- `audit-<account-id>-<timestamp>.json` — structured audit data for automation (unchanged)
+- `audit-<account-id>-<timestamp>.log` — human-readable audit summary (unchanged)
+- `audit-<account-id>-<timestamp>-inventory.json` — detailed resource inventory (additive)
+- `audit-<account-id>-<timestamp>-inventory.log` — human-readable resource inventory tables (additive)
+
+The standard audit JSON and log outputs are unchanged. When inventory collection is enabled
+(default), two additional files list EC2 instances, EBS volumes, RDS instances, load
+balancers (ELB), Lambda functions, S3 buckets, and DynamoDB tables with location, size,
+type, and version where they apply. Disable with `--no-inventory`.
 
 ## Permissions
 
@@ -158,8 +180,14 @@ This writes grouped outputs under `./account-check-runs/account-<account-id>/`:
 - `iam-runs/` — IAM audit JSON, shell audit log, IAM relationship graph (`.json`, `.html`, `.png`), and `iam-graph-<account-id>-sections/` zoom-friendly PNG tiles
 - `network-maps/from-audit/` — per-resource network maps from audit findings (`.json`, `.html`, `.png`, `.md`)
 - `network-maps/all-security-groups/` — per-SG network maps for the whole account
-- `network-maps/account-graph-<account-id>.*` — merged account-wide network graph (`.json`, `.html`, `.png`)
+- `network-maps/account-graph-<account-id>.*` — merged account-wide network graph (`.json`, `.html`, `.png`), including resource-inventory nodes
+- `network-maps/combined-json/resource-inventory-overlay.json` — inventory nodes/edges merged into the account graph
 - `account-check-summary.json` — machine-readable index of all generated artifacts
+
+The account graph also overlays the resource inventory (EC2, EBS, RDS, ELB, Lambda, S3,
+DynamoDB) as nodes grouped under per-region anchors, with labels carrying location, size,
+type, and version. These appear in the `Compute`, `Storage`, `Load balancers`, and `Regions`
+subgraphs of the account-graph PNG/HTML. Disable the overlay with `--no-inventory-graph`.
 
 `account-view.html` is a self-contained page that summarizes the account and links the
 interactive HTML graphs (marked "full view"), PNGs, and JSON/text reports. Open it in a
@@ -187,6 +215,9 @@ Optional flags:
 
 # Skip slicing the IAM PNG into section tiles
 --no-iam-sections
+
+# Skip overlaying the resource inventory onto the account graph
+--no-inventory-graph
 ```
 
 ---

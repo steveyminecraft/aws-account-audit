@@ -43,6 +43,8 @@ class SectionResult:
 class AuditReport:
     metadata: dict[str, Any]
     sections: list[SectionResult] = field(default_factory=list)
+    resource_inventory: dict[str, list[dict[str, Any]]] | None = None
+    resource_inventory_errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         findings = [finding.to_dict() for section in self.sections for finding in section.findings]

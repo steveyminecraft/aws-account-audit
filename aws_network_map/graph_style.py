@@ -18,6 +18,8 @@ CLASS_DEFS: dict[str, str] = {
     "policy": "fill:#ffedd5,stroke:#ea580c,stroke-width:2px",
     "principal": "fill:#f3f4f6,stroke:#6b7280,stroke-width:2px",
     "admin": "fill:#fecaca,stroke:#dc2626,stroke-width:3px",
+    "storage": "fill:#ccfbf1,stroke:#0d9488,stroke-width:2px",
+    "region": "fill:#f1f5f9,stroke:#475569,stroke-width:3px",
 }
 
 NETWORK_KIND_CLASS: dict[str, str] = {
@@ -37,6 +39,10 @@ NETWORK_KIND_CLASS: dict[str, str] = {
     "load_balancer": "lb",
     "target_group": "lb",
     "target": "compute",
+    "ebs_volume": "storage",
+    "s3_bucket": "storage",
+    "dynamodb_table": "storage",
+    "region": "region",
 }
 
 IAM_KIND_CLASS: dict[str, str] = {
@@ -54,6 +60,8 @@ NETWORK_LEGEND: tuple[tuple[str, str], ...] = (
     ("Network (VPC/subnet/routes)", "network"),
     ("Compute (EC2/RDS/Lambda)", "compute"),
     ("Load balancers", "lb"),
+    ("Storage (EBS/S3/DynamoDB)", "storage"),
+    ("Region", "region"),
 )
 
 IAM_LEGEND: tuple[tuple[str, str], ...] = (
