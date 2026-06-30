@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from aws_account_audit import inventory as inv
 
@@ -209,6 +210,39 @@ class TestWafHelpers(unittest.TestCase):
 
     def test_default_action_block(self) -> None:
         self.assertEqual(inv._waf_default_action({"Block": {}}), "Block")
+
+
+class TestCollectAccountInventoryWaf(unittest.TestCase):
+    def _run_collect(
+        self, *, waf_return: tuple[list[dict], str | None]
+    ) -> tuple[dict[str, list[dict]], list[str]]:
+        empty = {category: [] for category in inv.CATEGORIES}
+        with (
+            patch.object(
+                inv,
+                "_collect_regional_inventory",
+                return_value=(empty, []),
+            ),
+            patch.object(inv, "_collect_s3_buckets", return_value=([], [])),
+            patch.object(inv, "_collect_waf_cloudfront", return_value=waf_return),
+        ):
+            return inv.collect_account_inventory(
+                session=object(),
+                regions=["us-east-1"],
+                home_region="us-east-1",
+            )
+
+    def test_cloudfront_waf_none_error_does_not_crash(self) -> None:
+        waf_acl = {"name": "cf-acl", "scope": "CLOUDFRONT", "region": "global"}
+        inventory, errors = self._run_collect(waf_return=([waf_acl], None))
+        self.assertEqual(inventory["waf_web_acls"], [waf_acl])
+        self.assertEqual(errors, [])
+
+    def test_cloudfront_waf_error_is_appended(self) -> None:
+        _, errors = self._run_collect(
+            waf_return=([], "wafv2.list_web_acls(CLOUDFRONT,global) failed")
+        )
+        self.assertEqual(errors, ["wafv2.list_web_acls(CLOUDFRONT,global) failed"])
 
 
 class TestNameFromTags(unittest.TestCase):

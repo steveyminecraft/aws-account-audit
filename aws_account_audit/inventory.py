@@ -57,8 +57,9 @@ def collect_account_inventory(
     errors.extend(bucket_errors)
     inventory["s3_buckets"].extend(buckets)
 
-    cloudfront_waf, waf_errors = _collect_waf_cloudfront(session)
-    errors.extend(waf_errors)
+    cloudfront_waf, waf_error = _collect_waf_cloudfront(session)
+    if waf_error:
+        errors.append(waf_error)
     inventory["waf_web_acls"].extend(cloudfront_waf)
 
     return inventory, errors
