@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from aws_account_audit.models import Finding, SectionResult
-from aws_account_audit.session import client, safe_call
+from aws_account_audit.session import client, get_bucket_policy_status, safe_call
 
 
 def collect_identity(session: Any, region: str) -> SectionResult:
@@ -541,11 +541,7 @@ def collect_global_storage(session: Any, region: str) -> SectionResult:
             ),
             not_found_ok=True,
         )
-        policy_status, policy_status_error = safe_call(
-            f"s3.get_bucket_policy_status({name})",
-            lambda name=name: s3.get_bucket_policy_status(Bucket=name).get("PolicyStatus"),
-            not_found_ok=True,
-        )
+        policy_status, policy_status_error = get_bucket_policy_status(s3, name)
         for error in (location_error, public_block_error, policy_status_error):
             if error:
                 result.errors.append(error)
