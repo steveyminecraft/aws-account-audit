@@ -11,7 +11,11 @@ from aws_network_map.export import (
     _png_attempt_plan,
     compute_png_dimensions,
 )
-from aws_network_map.graph_style import MERMAID_MAX_TEXT_SIZE, render_interactive_html
+from aws_network_map.graph_style import (
+    MERMAID_MAX_TEXT_SIZE,
+    parse_mermaid_edges,
+    render_interactive_html,
+)
 
 
 class TestComputePngDimensions(unittest.TestCase):
@@ -115,6 +119,64 @@ class TestMermaidLimits(unittest.TestCase):
             mermaid='flowchart TB\n    a["node"]',
         )
         self.assertIn(f"maxTextSize: {MERMAID_MAX_TEXT_SIZE}", html)
+
+
+class TestParseMermaidEdges(unittest.TestCase):
+    MERMAID = """flowchart LR
+    subgraph s1["Internet"]
+        internet_0["Internet"]:::internet
+    end
+    sg_web["SG web"]:::sg
+    ec2_a["EC2 a"]:::compute
+    internet_0 -->|"443"| sg_web
+    sg_web -->|"to"| ec2_a
+    sg_web --> ec2_a
+"""
+
+    def test_parses_labeled_edges(self) -> None:
+        edges = parse_mermaid_edges(self.MERMAID)
+        self.assertIn(["internet_0", "sg_web"], edges)
+        self.assertIn(["sg_web", "ec2_a"], edges)
+
+    def test_parses_unlabeled_edges(self) -> None:
+        edges = parse_mermaid_edges("flowchart LR\n    a --> b\n")
+        self.assertEqual(edges, [["a", "b"]])
+
+    def test_ignores_node_and_subgraph_lines(self) -> None:
+        edges = parse_mermaid_edges(self.MERMAID)
+        flattened = {node for edge in edges for node in edge}
+        # Subgraph ids and bare node declarations must not appear as edge endpoints.
+        self.assertNotIn("s1", flattened)
+        self.assertEqual(len(edges), 3)
+
+    def test_handles_underscored_ids(self) -> None:
+        edges = parse_mermaid_edges('flowchart LR\n    sg_web_1 -->|"x"| ec2_b_2\n')
+        self.assertEqual(edges, [["sg_web_1", "ec2_b_2"]])
+
+
+class TestInteractiveHighlight(unittest.TestCase):
+    MERMAID = 'flowchart LR\n    a["A"]:::compute\n    b["B"]:::compute\n    a -->|"x"| b\n'
+
+    def setUp(self) -> None:
+        self.html = render_interactive_html(title="Graph", subtitle="sub", mermaid=self.MERMAID)
+
+    def test_embeds_edge_data(self) -> None:
+        self.assertIn("__GRAPH_EDGES__", self.html)
+        self.assertIn('[["a", "b"]]', self.html)
+
+    def test_includes_highlight_script_and_styles(self) -> None:
+        self.assertIn("focus-active", self.html)
+        self.assertIn("flowchart-link", self.html)
+        self.assertIn("addEventListener('click'", self.html)
+
+    def test_includes_usage_hint(self) -> None:
+        self.assertIn("highlight its connected chain", self.html)
+
+    def test_empty_graph_has_empty_edges(self) -> None:
+        html = render_interactive_html(
+            title="Empty", subtitle="none", mermaid='flowchart LR\n    a["A"]\n'
+        )
+        self.assertIn("window.__GRAPH_EDGES__ = [];", html)
 
 
 if __name__ == "__main__":
