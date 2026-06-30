@@ -90,6 +90,13 @@ class PngExportError(Exception):
         return self.written.get("md")
 
 
+# Chrome/Puppeteer cannot capture a screenshot larger than ~16384px on any axis.
+# The effective screenshot size is roughly viewport_dimension * device_scale, so we keep
+# width * scale and height * scale below this ceiling to avoid "Unable to capture
+# screenshot" protocol errors on large account graphs.
+MAX_EFFECTIVE_DIMENSION = 16000
+
+
 def compute_png_dimensions(
     node_count: int,
     edge_count: int,
@@ -115,6 +122,64 @@ def compute_png_dimensions(
     return width, height, scale, timeout_seconds
 
 
+def _png_attempt_plan(width: int, height: int, scale: float) -> list[tuple[int, int, float]]:
+    """Build a list of (width, height, scale) render attempts, largest first.
+
+    The first attempt caps the effective screenshot size (dimension * scale) to
+    ``MAX_EFFECTIVE_DIMENSION`` by lowering the device scale, then shrinking the viewport
+    if scale 1.0 is still too large. Later attempts progressively reduce size so a render
+    still succeeds on very large graphs that Chrome cannot capture at full resolution.
+    """
+    attempts: list[tuple[int, int, float]] = []
+    seen: set[tuple[int, int, float]] = set()
+
+    def add(candidate_width: float, candidate_height: float, candidate_scale: float) -> None:
+        normalized = (
+            max(800, int(candidate_width)),
+            max(600, int(candidate_height)),
+            round(max(1.0, float(candidate_scale)), 2),
+        )
+        if normalized not in seen:
+            seen.add(normalized)
+            attempts.append(normalized)
+
+    primary_width = float(width)
+    primary_height = float(height)
+    primary_scale = max(1.0, float(scale))
+
+    longest = max(primary_width, primary_height) * primary_scale
+    if longest > MAX_EFFECTIVE_DIMENSION:
+        primary_scale = max(1.0, primary_scale * MAX_EFFECTIVE_DIMENSION / longest)
+
+    longest = max(primary_width, primary_height) * primary_scale
+    if longest > MAX_EFFECTIVE_DIMENSION:
+        shrink = MAX_EFFECTIVE_DIMENSION / longest
+        primary_width *= shrink
+        primary_height *= shrink
+
+    add(primary_width, primary_height, primary_scale)
+    add(min(primary_width, 12000), min(primary_height, 12000), min(primary_scale, 1.5))
+    add(min(primary_width, 10000), min(primary_height, 10000), 1.0)
+    add(min(primary_width, 8000), min(primary_height, 8000), 1.0)
+    return attempts
+
+
+def _is_capture_failure(message: str | None) -> bool:
+    """True when an mmdc failure looks like a Chrome screenshot/size limit error."""
+    if not message:
+        return False
+    lowered = message.lower()
+    markers = (
+        "capturescreenshot",
+        "unable to capture screenshot",
+        "protocol error",
+        "target closed",
+        "page crashed",
+        "navigation timeout",
+    )
+    return any(marker in lowered for marker in markers)
+
+
 def _render_png(
     mermaid_source: Path,
     png_path: Path,
@@ -135,40 +200,53 @@ def _render_png(
         scale = float(scale_override)
         # High-resolution renders take longer; give the renderer more headroom.
         timeout_seconds = max(timeout_seconds, min(1200, int(120 + scale * 90)))
-    command = _png_render_command(
-        mermaid_source,
-        png_path,
-        width=width,
-        height=height,
-        scale=scale,
-    )
-    if command is None:
-        return False, (
-            "PNG export requires @mermaid-js/mermaid-cli. "
-            "Run `npm install` in aws-account-audit, or install mmdc globally."
+
+    attempts = _png_attempt_plan(width, height, scale)
+    last_message: str | None = None
+
+    for index, (attempt_width, attempt_height, attempt_scale) in enumerate(attempts):
+        command = _png_render_command(
+            mermaid_source,
+            png_path,
+            width=attempt_width,
+            height=attempt_height,
+            scale=attempt_scale,
         )
+        if command is None:
+            return False, (
+                "PNG export requires @mermaid-js/mermaid-cli. "
+                "Run `npm install` in aws-account-audit, or install mmdc globally."
+            )
 
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return False, f"PNG export timed out after {timeout_seconds} seconds."
-    except OSError as exc:
-        return False, f"PNG export failed to start renderer: {exc}"
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            last_message = f"PNG export timed out after {timeout_seconds} seconds."
+            continue
+        except OSError as exc:
+            return False, f"PNG export failed to start renderer: {exc}"
 
-    if result.returncode == 0 and png_path.exists():
-        return True, None
+        if result.returncode == 0 and png_path.exists():
+            return True, None
 
-    details = (result.stderr or result.stdout or "").strip()
-    message = f"PNG export failed with exit code {result.returncode}."
-    if details:
-        message = f"{message} {details}"
-    return False, message
+        details = (result.stderr or result.stdout or "").strip()
+        last_message = f"PNG export failed with exit code {result.returncode}."
+        if details:
+            last_message = f"{last_message} {details}"
+
+        # Only fall back to a smaller render when the failure is a Chrome capture/size
+        # limit. Other errors (e.g. invalid Mermaid) will not be fixed by shrinking.
+        is_last_attempt = index == len(attempts) - 1
+        if not _is_capture_failure(last_message) or is_last_attempt:
+            return False, last_message
+
+    return False, last_message
 
 
 def _estimate_mermaid_counts(mermaid: str) -> tuple[int, int]:
