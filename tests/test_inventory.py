@@ -110,8 +110,60 @@ class TestRenderInventoryText(unittest.TestCase):
         self.assertIn("my-bucket", self.text)
 
 
+class TestRenderInventoryHtml(unittest.TestCase):
+    def setUp(self) -> None:
+        self.html = inv.render_inventory_html(
+            {
+                "account_id": "123456789012",
+                "generated_at": "2026-06-30",
+                "regions_scanned": ["eu-west-1", "us-east-1"],
+            },
+            _inventory(),
+        )
+
+    def test_is_html_document(self) -> None:
+        self.assertTrue(self.html.strip().lower().startswith("<!doctype html"))
+        self.assertIn("Resource inventory: 123456789012", self.html)
+
+    def test_contains_tables_for_each_type(self) -> None:
+        self.assertIn("<table>", self.html)
+        self.assertIn("EC2 Instances", self.html)
+        self.assertIn("S3 Buckets", self.html)
+        self.assertIn("DynamoDB Tables", self.html)
+
+    def test_contains_row_values(self) -> None:
+        self.assertIn("i-1", self.html)
+        self.assertIn("t3.micro", self.html)
+        self.assertIn("my-bucket", self.html)
+        self.assertIn("15.4", self.html)
+
+    def test_includes_filter_control(self) -> None:
+        self.assertIn("filterInventory", self.html)
+        self.assertIn('type="search"', self.html)
+
+    def test_escapes_special_characters(self) -> None:
+        nasty = {category: [] for category in inv.CATEGORIES}
+        nasty["s3_buckets"] = [{"name": "<script>alert(1)</script>", "region": "eu-west-1"}]
+        html = inv.render_inventory_html({"account_id": "123"}, nasty)
+        self.assertNotIn("<script>alert(1)</script>", html)
+        self.assertIn("&lt;script&gt;", html)
+
+    def test_renders_errors_section(self) -> None:
+        html = inv.render_inventory_html(
+            {"account_id": "123"}, _inventory(), errors=["ec2.describe_instances denied"]
+        )
+        self.assertIn("Collection errors", html)
+        self.assertIn("ec2.describe_instances denied", html)
+
+    def test_empty_inventory_shows_message(self) -> None:
+        html = inv.render_inventory_html(
+            {"account_id": "123"}, {category: [] for category in inv.CATEGORIES}
+        )
+        self.assertIn("No resources discovered", html)
+
+
 class TestWriteInventoryFiles(unittest.TestCase):
-    def test_writes_separate_json_and_log(self) -> None:
+    def test_writes_separate_json_log_and_html(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             paths = inv.write_inventory_files(
                 {
@@ -125,9 +177,13 @@ class TestWriteInventoryFiles(unittest.TestCase):
             )
             self.assertTrue(paths["inventory_json"].exists())
             self.assertTrue(paths["inventory_text"].exists())
+            self.assertTrue(paths["inventory_html"].exists())
             payload = json.loads(paths["inventory_json"].read_text(encoding="utf-8"))
             self.assertIn("inventory", payload)
             self.assertIn("Resource Inventory", paths["inventory_text"].read_text(encoding="utf-8"))
+            html = paths["inventory_html"].read_text(encoding="utf-8")
+            self.assertIn("<table>", html)
+            self.assertIn("my-bucket", html)
 
 
 class TestBuildInventoryGraph(unittest.TestCase):
