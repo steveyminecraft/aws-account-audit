@@ -21,10 +21,14 @@ CATEGORIES: tuple[str, ...] = (
     "ec2_instances",
     "ebs_volumes",
     "rds_instances",
+    "rds_clusters",
     "load_balancers",
     "lambda_functions",
+    "eventbridge_buses",
+    "eventbridge_rules",
     "s3_buckets",
     "dynamodb_tables",
+    "waf_web_acls",
 )
 
 
@@ -52,6 +56,10 @@ def collect_account_inventory(
     buckets, bucket_errors = _collect_s3_buckets(session, home_region)
     errors.extend(bucket_errors)
     inventory["s3_buckets"].extend(buckets)
+
+    cloudfront_waf, waf_errors = _collect_waf_cloudfront(session)
+    errors.extend(waf_errors)
+    inventory["waf_web_acls"].extend(cloudfront_waf)
 
     return inventory, errors
 
@@ -403,6 +411,8 @@ def _collect_regional_inventory(
     lambda_client = client(session, "lambda", region)
     rds = client(session, "rds", region)
     dynamodb = client(session, "dynamodb", region)
+    events = client(session, "events", region)
+    waf = client(session, "wafv2", region)
 
     instances, instance_error = _collect_instances(ec2, region)
     if instance_error:
@@ -440,6 +450,55 @@ def _collect_regional_inventory(
     if rds_error:
         errors.append(rds_error)
     inventory["rds_instances"] = [_summarize_rds(item, region) for item in db_instances or []]
+
+    db_clusters, cluster_error = _paginate_call(
+        rds.describe_db_clusters, "DBClusters", f"rds.describe_db_clusters({region})"
+    )
+    if cluster_error:
+        errors.append(cluster_error)
+    inventory["rds_clusters"] = [_summarize_rds_cluster(item, region) for item in db_clusters or []]
+
+    buses, bus_error = _paginate_call(
+        events.list_event_buses, "EventBuses", f"events.list_event_buses({region})"
+    )
+    if bus_error:
+        errors.append(bus_error)
+    inventory["eventbridge_buses"] = [
+        _summarize_eventbridge_bus(item, region) for item in buses or []
+    ]
+
+    rules: list[dict[str, Any]] = []
+    for bus in buses or []:
+        bus_name = bus.get("Name", "default")
+        bus_rules, rules_error = _paginate_call(
+            events.list_rules,
+            "Rules",
+            f"events.list_rules({region},{bus_name})",
+            EventBusName=bus_name,
+        )
+        if rules_error:
+            errors.append(rules_error)
+            continue
+        for rule in bus_rules or []:
+            target_count = 0
+            targets, targets_error = _paginate_call(
+                events.list_targets_by_rule,
+                "Targets",
+                f"events.list_targets_by_rule({region},{bus_name},{rule.get('Name')})",
+                Rule=rule["Name"],
+                EventBusName=bus_name,
+            )
+            if targets_error:
+                errors.append(targets_error)
+            else:
+                target_count = len(targets or [])
+            rules.append(_summarize_eventbridge_rule(rule, region, bus_name, target_count))
+    inventory["eventbridge_rules"] = rules
+
+    regional_waf, waf_error = _collect_waf_web_acls(waf, region, scope="REGIONAL")
+    if waf_error:
+        errors.append(waf_error)
+    inventory["waf_web_acls"] = regional_waf
 
     tables, ddb_error = _paginate_call(
         dynamodb.list_tables, "TableNames", f"dynamodb.list_tables({region})"
@@ -486,6 +545,100 @@ def _collect_s3_buckets(session: Any, home_region: str) -> tuple[list[dict[str, 
             }
         )
     return details, errors
+
+
+def _collect_waf_cloudfront(session: Any) -> tuple[list[dict[str, Any]], list[str]]:
+    """List CloudFront-scoped WAF Web ACLs (API home region is always us-east-1)."""
+    waf = client(session, "wafv2", "us-east-1")
+    return _collect_waf_web_acls(waf, "global", scope="CLOUDFRONT")
+
+
+def _collect_waf_web_acls(
+    waf: Any, region: str, *, scope: str
+) -> tuple[list[dict[str, Any]], str | None]:
+    summaries, error = safe_call(
+        f"wafv2.list_web_acls({scope},{region})",
+        lambda: _paginate_waf(waf.list_web_acls, scope=scope),
+    )
+    if error:
+        return [], error
+
+    details: list[dict[str, Any]] = []
+    describe_errors: list[str] = []
+    for summary in summaries or []:
+        item, detail_error = _describe_waf_web_acl(waf, summary, region, scope=scope)
+        if detail_error:
+            describe_errors.append(detail_error)
+            details.append(
+                {
+                    "name": summary.get("Name"),
+                    "id": summary.get("Id"),
+                    "scope": scope,
+                    "description": summary.get("Description"),
+                    "rule_count": None,
+                    "default_action": None,
+                    "region": region,
+                }
+            )
+        elif item:
+            details.append(item)
+    combined_error = "; ".join(describe_errors) if describe_errors else None
+    return details, combined_error
+
+
+def _paginate_waf(func: Callable[..., Any], *, scope: str) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    marker: str | None = None
+    while True:
+        params: dict[str, Any] = {"Scope": scope, "Limit": 100}
+        if marker:
+            params["Marker"] = marker
+        response = func(**params)
+        items.extend(response.get("WebACLs", []))
+        marker = response.get("NextMarker")
+        if not marker:
+            break
+    return items
+
+
+def _describe_waf_web_acl(
+    waf: Any, summary: dict[str, Any], region: str, *, scope: str
+) -> tuple[dict[str, Any] | None, str | None]:
+    name = summary.get("Name")
+    acl_id = summary.get("Id")
+    if not name or not acl_id:
+        return None, None
+
+    response, error = safe_call(
+        f"wafv2.describe_web_acl({scope},{name})",
+        lambda: waf.describe_web_acl(Name=name, Scope=scope, Id=acl_id),
+    )
+    if error:
+        return None, error
+
+    acl = (response or {}).get("WebACL", {})
+    default_action = _waf_default_action(acl.get("DefaultAction"))
+    return (
+        {
+            "name": name,
+            "id": acl_id,
+            "scope": scope,
+            "description": summary.get("Description") or acl.get("Description"),
+            "rule_count": len(acl.get("Rules") or []),
+            "default_action": default_action,
+            "region": region,
+        },
+        None,
+    )
+
+
+def _waf_default_action(action: dict[str, Any] | None) -> str | None:
+    if not action:
+        return None
+    for key in ("Allow", "Block"):
+        if key in action:
+            return key
+    return next(iter(action.keys()), None)
 
 
 def _collect_instances(ec2: Any, region: str) -> tuple[list[dict[str, Any]] | None, str | None]:
@@ -583,6 +736,54 @@ def _summarize_rds(item: dict[str, Any], region: str) -> dict[str, Any]:
     }
 
 
+def _summarize_rds_cluster(item: dict[str, Any], region: str) -> dict[str, Any]:
+    members = item.get("DBClusterMembers") or []
+    return {
+        "identifier": item.get("DBClusterIdentifier"),
+        "engine": item.get("Engine"),
+        "engine_version": item.get("EngineVersion"),
+        "engine_mode": item.get("EngineMode"),
+        "status": item.get("Status"),
+        "member_count": len(members),
+        "multi_az": item.get("MultiAZ"),
+        "storage_encrypted": item.get("StorageEncrypted"),
+        "endpoint": item.get("Endpoint"),
+        "region": region,
+    }
+
+
+def _summarize_eventbridge_bus(item: dict[str, Any], region: str) -> dict[str, Any]:
+    return {
+        "name": item.get("Name"),
+        "arn": item.get("Arn"),
+        "region": region,
+    }
+
+
+def _summarize_eventbridge_rule(
+    item: dict[str, Any], region: str, bus_name: str, target_count: int
+) -> dict[str, Any]:
+    schedule = item.get("ScheduleExpression")
+    pattern = item.get("EventPattern")
+    trigger = schedule or (_truncate(pattern, 80) if pattern else None)
+    return {
+        "name": item.get("Name"),
+        "bus_name": bus_name,
+        "state": item.get("State"),
+        "trigger": trigger,
+        "target_count": target_count,
+        "description": item.get("Description"),
+        "region": region,
+    }
+
+
+def _truncate(value: str, max_len: int) -> str:
+    text = value.replace("\n", " ").strip()
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3] + "..."
+
+
 def _summarize_load_balancer(item: dict[str, Any], region: str) -> dict[str, Any]:
     return {
         "name": item.get("LoadBalancerName"),
@@ -677,6 +878,37 @@ def _rds_graph_label(item: dict[str, Any]) -> str:
     return f"RDS {item.get('identifier')} ({detail})" if detail else f"RDS {item.get('identifier')}"
 
 
+def _rds_cluster_graph_label(item: dict[str, Any]) -> str:
+    engine = _join(item.get("engine"), item.get("engine_version"), item.get("engine_mode"))
+    members = (
+        f"{item.get('member_count')} members" if item.get("member_count") is not None else None
+    )
+    detail = _join(engine, members, item.get("status"))
+    return (
+        f"RDS cluster {item.get('identifier')} ({detail})"
+        if detail
+        else f"RDS cluster {item.get('identifier')}"
+    )
+
+
+def _eventbridge_bus_graph_label(item: dict[str, Any]) -> str:
+    return f"Event bus {item.get('name')}"
+
+
+def _eventbridge_rule_graph_label(item: dict[str, Any]) -> str:
+    detail = _join(item.get("state"), item.get("trigger"), f"{item.get('target_count')} targets")
+    return f"Rule {item.get('name')} ({detail})" if detail else f"Rule {item.get('name')}"
+
+
+def _waf_graph_label(item: dict[str, Any]) -> str:
+    detail = _join(
+        item.get("scope"),
+        f"{item.get('rule_count')} rules" if item.get("rule_count") is not None else None,
+        item.get("default_action"),
+    )
+    return f"WAF {item.get('name')} ({detail})" if detail else f"WAF {item.get('name')}"
+
+
 def _lb_graph_label(item: dict[str, Any]) -> str:
     detail = _join(item.get("type"), item.get("scheme"), item.get("state"))
     return f"ELB {item.get('name')} ({detail})" if detail else f"ELB {item.get('name')}"
@@ -715,10 +947,31 @@ _GRAPH_SPECS: tuple[_GraphSpec, ...] = (
     _GraphSpec("ec2_instances", "ec2_instance", lambda i: i.get("id"), _ec2_graph_label),
     _GraphSpec("ebs_volumes", "ebs_volume", lambda i: i.get("id"), _ebs_graph_label),
     _GraphSpec("rds_instances", "rds_instance", lambda i: i.get("identifier"), _rds_graph_label),
+    _GraphSpec(
+        "rds_clusters", "rds_cluster", lambda i: i.get("identifier"), _rds_cluster_graph_label
+    ),
     _GraphSpec("load_balancers", "load_balancer", lambda i: i.get("name"), _lb_graph_label),
     _GraphSpec("lambda_functions", "lambda_function", lambda i: i.get("name"), _lambda_graph_label),
+    _GraphSpec(
+        "eventbridge_buses",
+        "eventbridge_bus",
+        lambda i: i.get("name"),
+        _eventbridge_bus_graph_label,
+    ),
+    _GraphSpec(
+        "eventbridge_rules",
+        "eventbridge_rule",
+        lambda i: f"{i.get('bus_name')}:{i.get('name')}",
+        _eventbridge_rule_graph_label,
+    ),
     _GraphSpec("s3_buckets", "s3_bucket", lambda i: i.get("name"), _s3_graph_label),
     _GraphSpec("dynamodb_tables", "dynamodb_table", lambda i: i.get("name"), _dynamodb_graph_label),
+    _GraphSpec(
+        "waf_web_acls",
+        "waf_web_acl",
+        lambda i: f"{i.get('scope')}:{i.get('id')}",
+        _waf_graph_label,
+    ),
 )
 
 
@@ -782,6 +1035,21 @@ _TABLE_SPECS: tuple[_TableSpec, ...] = (
         ],
     ),
     _TableSpec(
+        "rds_clusters",
+        "RDS Clusters",
+        ["Identifier", "Engine", "Version", "Mode", "Members", "Location", "Status", "Encrypted"],
+        lambda c: [
+            _text(c.get("identifier")),
+            _text(c.get("engine")),
+            _text(c.get("engine_version")),
+            _text(c.get("engine_mode")),
+            _text(c.get("member_count")),
+            _text(c.get("region")),
+            _text(c.get("status")),
+            _text(c.get("storage_encrypted")),
+        ],
+    ),
+    _TableSpec(
         "load_balancers",
         "Load Balancers (ELB)",
         ["Name", "Type", "Scheme", "State", "Location", "DNS Name"],
@@ -809,6 +1077,29 @@ _TABLE_SPECS: tuple[_TableSpec, ...] = (
         ],
     ),
     _TableSpec(
+        "eventbridge_buses",
+        "EventBridge Event Buses",
+        ["Name", "ARN", "Location"],
+        lambda b: [
+            _text(b.get("name")),
+            _text(b.get("arn")),
+            _text(b.get("region")),
+        ],
+    ),
+    _TableSpec(
+        "eventbridge_rules",
+        "EventBridge Rules",
+        ["Name", "Bus", "State", "Trigger", "Targets", "Location"],
+        lambda r: [
+            _text(r.get("name")),
+            _text(r.get("bus_name")),
+            _text(r.get("state")),
+            _text(r.get("trigger")),
+            _text(r.get("target_count")),
+            _text(r.get("region")),
+        ],
+    ),
+    _TableSpec(
         "s3_buckets",
         "S3 Buckets",
         ["Name", "Location", "Created", "Public"],
@@ -826,6 +1117,19 @@ _TABLE_SPECS: tuple[_TableSpec, ...] = (
         lambda t: [
             _text(t.get("name")),
             _text(t.get("region")),
+        ],
+    ),
+    _TableSpec(
+        "waf_web_acls",
+        "WAF Web ACLs",
+        ["Name", "Scope", "Rules", "Default Action", "Description", "Location"],
+        lambda w: [
+            _text(w.get("name")),
+            _text(w.get("scope")),
+            _text(w.get("rule_count")),
+            _text(w.get("default_action")),
+            _text(w.get("description")),
+            _text(w.get("region")),
         ],
     ),
 )

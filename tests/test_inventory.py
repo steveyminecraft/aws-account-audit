@@ -49,6 +49,18 @@ def _inventory() -> dict[str, list[dict]]:
                 "publicly_accessible": False,
             }
         ],
+        "rds_clusters": [
+            {
+                "identifier": "aurora-prod",
+                "engine": "aurora-postgresql",
+                "engine_version": "15.4",
+                "engine_mode": "provisioned",
+                "member_count": 2,
+                "status": "available",
+                "storage_encrypted": True,
+                "region": "eu-west-1",
+            }
+        ],
         "load_balancers": [
             {
                 "name": "web-alb",
@@ -71,6 +83,23 @@ def _inventory() -> dict[str, list[dict]]:
                 "region": "us-east-1",
             }
         ],
+        "eventbridge_buses": [
+            {
+                "name": "default",
+                "arn": "arn:aws:events:eu-west-1:123:event-bus/default",
+                "region": "eu-west-1",
+            }
+        ],
+        "eventbridge_rules": [
+            {
+                "name": "nightly",
+                "bus_name": "default",
+                "state": "ENABLED",
+                "trigger": "rate(1 day)",
+                "target_count": 1,
+                "region": "eu-west-1",
+            }
+        ],
         "s3_buckets": [
             {
                 "name": "my-bucket",
@@ -80,6 +109,17 @@ def _inventory() -> dict[str, list[dict]]:
             }
         ],
         "dynamodb_tables": [{"name": "sessions", "region": "eu-west-1"}],
+        "waf_web_acls": [
+            {
+                "name": "web-acl",
+                "id": "abc123",
+                "scope": "REGIONAL",
+                "rule_count": 5,
+                "default_action": "Allow",
+                "description": "Main ACL",
+                "region": "eu-west-1",
+            }
+        ],
     }
 
 
@@ -88,7 +128,7 @@ class TestInventoryToDict(unittest.TestCase):
         payload = inv.inventory_to_dict({"account_id": "123"}, _inventory())
         self.assertIn("inventory", payload)
         self.assertIn("summary", payload)
-        self.assertEqual(payload["summary"]["resource_count"], 7)
+        self.assertEqual(payload["summary"]["resource_count"], 11)
 
 
 class TestRenderInventoryText(unittest.TestCase):
@@ -108,6 +148,11 @@ class TestRenderInventoryText(unittest.TestCase):
 
     def test_lists_s3_bucket(self) -> None:
         self.assertIn("my-bucket", self.text)
+
+    def test_lists_rds_cluster_and_waf(self) -> None:
+        self.assertIn("aurora-prod", self.text)
+        self.assertIn("web-acl", self.text)
+        self.assertIn("EventBridge", self.text)
 
 
 class TestRenderInventoryHtml(unittest.TestCase):
@@ -200,10 +245,14 @@ class TestBuildInventoryGraph(unittest.TestCase):
         self.assertEqual(nodes["ec2_instance:i-1"]["kind"], "ec2_instance")
         self.assertEqual(nodes["ebs_volume:vol-1"]["kind"], "ebs_volume")
         self.assertEqual(nodes["rds_instance:prod-db"]["kind"], "rds_instance")
+        self.assertEqual(nodes["rds_cluster:aurora-prod"]["kind"], "rds_cluster")
         self.assertEqual(nodes["load_balancer:web-alb"]["kind"], "load_balancer")
         self.assertEqual(nodes["lambda_function:processor"]["kind"], "lambda_function")
+        self.assertEqual(nodes["eventbridge_bus:default"]["kind"], "eventbridge_bus")
+        self.assertEqual(nodes["eventbridge_rule:default:nightly"]["kind"], "eventbridge_rule")
         self.assertEqual(nodes["s3_bucket:my-bucket"]["kind"], "s3_bucket")
         self.assertEqual(nodes["dynamodb_table:sessions"]["kind"], "dynamodb_table")
+        self.assertEqual(nodes["waf_web_acl:REGIONAL:abc123"]["kind"], "waf_web_acl")
 
     def test_labels_carry_type_size_version(self) -> None:
         labels = {node["node_id"]: node["label"] for node in self.graph["nodes"]}

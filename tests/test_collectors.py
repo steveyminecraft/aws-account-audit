@@ -144,6 +144,73 @@ class TestSummarizeLambda(unittest.TestCase):
         )
 
 
+class TestSummarizeRdsCluster(unittest.TestCase):
+    def _cluster(self) -> dict:
+        return {
+            "DBClusterIdentifier": "aurora-prod",
+            "Engine": "aurora-postgresql",
+            "EngineVersion": "15.4",
+            "EngineMode": "provisioned",
+            "Status": "available",
+            "DBClusterMembers": [{"DBInstanceIdentifier": "aurora-prod-1"}],
+            "MultiAZ": True,
+            "StorageEncrypted": True,
+            "Endpoint": "aurora-prod.cluster-abc.eu-west-1.rds.amazonaws.com",
+        }
+
+    def test_includes_engine_mode_and_members(self) -> None:
+        result = inv._summarize_rds_cluster(self._cluster(), "eu-west-1")
+        self.assertEqual(result["engine_mode"], "provisioned")
+        self.assertEqual(result["member_count"], 1)
+
+    def test_includes_version(self) -> None:
+        self.assertEqual(
+            inv._summarize_rds_cluster(self._cluster(), "eu-west-1")["engine_version"], "15.4"
+        )
+
+
+class TestSummarizeEventBridge(unittest.TestCase):
+    def test_bus_summary(self) -> None:
+        result = inv._summarize_eventbridge_bus(
+            {"Name": "default", "Arn": "arn:aws:events:eu-west-1:123:event-bus/default"},
+            "eu-west-1",
+        )
+        self.assertEqual(result["name"], "default")
+
+    def test_rule_summary_schedule(self) -> None:
+        result = inv._summarize_eventbridge_rule(
+            {
+                "Name": "nightly",
+                "State": "ENABLED",
+                "ScheduleExpression": "rate(1 day)",
+                "Description": "daily",
+            },
+            "eu-west-1",
+            "default",
+            2,
+        )
+        self.assertEqual(result["trigger"], "rate(1 day)")
+        self.assertEqual(result["target_count"], 2)
+
+    def test_rule_summary_truncates_long_pattern(self) -> None:
+        pattern = '{"source": ["' + "x" * 100 + '"]}'
+        result = inv._summarize_eventbridge_rule(
+            {"Name": "on-event", "State": "ENABLED", "EventPattern": pattern},
+            "eu-west-1",
+            "default",
+            1,
+        )
+        self.assertLessEqual(len(result["trigger"] or ""), 80)
+
+
+class TestWafHelpers(unittest.TestCase):
+    def test_default_action_allow(self) -> None:
+        self.assertEqual(inv._waf_default_action({"Allow": {}}), "Allow")
+
+    def test_default_action_block(self) -> None:
+        self.assertEqual(inv._waf_default_action({"Block": {}}), "Block")
+
+
 class TestNameFromTags(unittest.TestCase):
     def test_returns_name_value(self) -> None:
         self.assertEqual(inv._name_from_tags([{"Key": "Name", "Value": "web-1"}]), "web-1")

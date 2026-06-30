@@ -22,6 +22,8 @@ CLASS_DEFS: dict[str, str] = {
     "admin": "fill:#fecaca,stroke:#dc2626,stroke-width:3px",
     "storage": "fill:#ccfbf1,stroke:#0d9488,stroke-width:2px",
     "region": "fill:#f1f5f9,stroke:#475569,stroke-width:3px",
+    "events": "fill:#fef3c7,stroke:#d97706,stroke-width:2px",
+    "security": "fill:#fce7f3,stroke:#db2777,stroke-width:2px",
 }
 
 NETWORK_KIND_CLASS: dict[str, str] = {
@@ -45,6 +47,10 @@ NETWORK_KIND_CLASS: dict[str, str] = {
     "s3_bucket": "storage",
     "dynamodb_table": "storage",
     "region": "region",
+    "rds_cluster": "compute",
+    "eventbridge_bus": "events",
+    "eventbridge_rule": "events",
+    "waf_web_acl": "security",
 }
 
 IAM_KIND_CLASS: dict[str, str] = {
@@ -64,6 +70,8 @@ NETWORK_LEGEND: tuple[tuple[str, str], ...] = (
     ("Load balancers", "lb"),
     ("Storage (EBS/S3/DynamoDB)", "storage"),
     ("Region", "region"),
+    ("EventBridge", "events"),
+    ("WAF / security", "security"),
 )
 
 IAM_LEGEND: tuple[tuple[str, str], ...] = (

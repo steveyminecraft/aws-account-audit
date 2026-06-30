@@ -27,10 +27,14 @@ Per-resource detail captured for the inventory listing (location, size, type, ve
 | EC2 instance | Availability zone | instance type | instance type / platform | AMI / platform details |
 | EBS volume | Availability zone | size (GiB) | volume type (gp3, io2, ...) | — |
 | RDS instance | Availability zone | allocated storage (GiB) | instance class | engine + engine version |
+| RDS cluster | Region | member count | engine mode (Aurora/provisioned) | engine + engine version |
 | Load balancer (ELB) | Availability zones | — | application / network / classic | — |
 | Lambda function | Region | memory (MB) + code size | architecture (x86_64 / arm64) | runtime + published version |
+| EventBridge bus | Region | — | — | — |
+| EventBridge rule | Region | target count | schedule or event pattern | state |
 | S3 bucket | Region | — | — | — |
 | DynamoDB table | Region | — | — | — |
+| WAF Web ACL | Region or global (CloudFront) | rule count | REGIONAL / CLOUDFRONT scope | default action (Allow/Block) |
 
 **Findings**
 - Missing password policy or GuardDuty
@@ -84,9 +88,9 @@ Reports are written to `--output-dir` (default: `./audit-runs`):
 - `audit-<account-id>-<timestamp>-inventory.html` — interactive resource inventory tables with a live filter (additive)
 
 The standard audit JSON and log outputs are unchanged. When inventory collection is enabled
-(default), additional files list EC2 instances, EBS volumes, RDS instances, load balancers
-(ELB), Lambda functions, S3 buckets, and DynamoDB tables with location, size, type, and
-version where they apply. The `-inventory.html` page renders each resource type as a sortable,
+(default), additional files list EC2 instances, EBS volumes, RDS instances and clusters,
+load balancers (ELB), Lambda functions, EventBridge buses and rules, S3 buckets, DynamoDB
+tables, and WAF Web ACLs with location, size, type, and version where they apply. The `-inventory.html` page renders each resource type as a sortable,
 zebra-striped table with summary counts and a search box to filter rows across all tables.
 Disable inventory with `--no-inventory`.
 

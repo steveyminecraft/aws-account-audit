@@ -404,6 +404,8 @@ def render_account_mermaid(graph: AccountGraph, *, direction: str = "TB") -> str
         ("compute", "Compute"),
         ("lb", "Load balancers"),
         ("storage", "Storage"),
+        ("events", "EventBridge"),
+        ("security", "Security (WAF)"),
         ("other", "Other resources"),
     ]
     bucket_keys = {key for key, _ in subgraph_order}
@@ -451,12 +453,16 @@ def _network_bucket(kind: str) -> str:
         return "security_group"
     if kind in {"vpc", "subnet", "route_table", "nacl", "igw", "nat", "network_interface"}:
         return "network"
-    if kind in {"ec2_instance", "rds_instance", "lambda_function", "target"}:
+    if kind in {"ec2_instance", "rds_instance", "rds_cluster", "lambda_function", "target"}:
         return "compute"
     if kind in {"load_balancer", "target_group"}:
         return "lb"
     if kind in {"ebs_volume", "s3_bucket", "dynamodb_table"}:
         return "storage"
+    if kind in {"eventbridge_bus", "eventbridge_rule"}:
+        return "events"
+    if kind in {"waf_web_acl"}:
+        return "security"
     return "other"
 
 
