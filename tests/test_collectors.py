@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, call, patch
 
 from aws_account_audit import inventory as inv
 
@@ -210,6 +210,21 @@ class TestWafHelpers(unittest.TestCase):
 
     def test_default_action_block(self) -> None:
         self.assertEqual(inv._waf_default_action({"Block": {}}), "Block")
+
+    def test_paginate_waf_uses_next_marker(self) -> None:
+        list_web_acls = MagicMock()
+        list_web_acls.side_effect = [
+            {"WebACLs": [{"Name": "acl-1", "Id": "1"}], "NextMarker": "page-2"},
+            {"WebACLs": [{"Name": "acl-2", "Id": "2"}]},
+        ]
+        items = inv._paginate_waf(list_web_acls, scope="CLOUDFRONT")
+        self.assertEqual(len(items), 2)
+        list_web_acls.assert_has_calls(
+            [
+                call(Scope="CLOUDFRONT", Limit=100),
+                call(Scope="CLOUDFRONT", Limit=100, NextMarker="page-2"),
+            ]
+        )
 
 
 class TestCollectAccountInventoryWaf(unittest.TestCase):
