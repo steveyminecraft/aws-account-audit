@@ -31,7 +31,9 @@ class TestSafeCall(unittest.TestCase):
         def raise_access_denied() -> None:
             raise _client_error("AccessDenied", "no access")
 
-        value, error = safe_call("s3.get_bucket_policy_status", raise_access_denied, not_found_ok=True)
+        value, error = safe_call(
+            "s3.get_bucket_policy_status", raise_access_denied, not_found_ok=True
+        )
         self.assertIsNone(value)
         self.assertIsNotNone(error)
         self.assertIn("AccessDenied", error)
