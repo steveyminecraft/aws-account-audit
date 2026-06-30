@@ -329,15 +329,31 @@ def main(argv: list[str] | None = None) -> int:
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_json.write_text(json.dumps(output_payload, indent=2))
     write_html(merged, output_html, direction=args.direction)
-    write_png(merged, output_png, direction=args.direction)
 
     print(f"Wrote merged graph JSON: {output_json}", file=sys.stderr)
     print(f"Wrote merged graph HTML: {output_html}", file=sys.stderr)
-    print(f"Wrote merged graph PNG: {output_png}", file=sys.stderr)
+
+    # A failed PNG must not abort the run: the interactive HTML is the full-fidelity view,
+    # and very large account graphs can exceed Chrome's screenshot limits.
+    png_ok = True
+    try:
+        write_png(merged, output_png, direction=args.direction)
+    except RuntimeError as exc:
+        png_ok = False
+        print(f"Warning: merged graph PNG was not written: {exc}", file=sys.stderr)
+        print(f"Open the interactive HTML instead: {output_html}", file=sys.stderr)
+    else:
+        print(f"Wrote merged graph PNG: {output_png}", file=sys.stderr)
+
     print(
         f"Merged {len(payloads)} map file(s): {summary['node_count']} nodes, {summary['edge_count']} edges",
         file=sys.stderr,
     )
+    if not png_ok:
+        print(
+            "Completed without the merged PNG; use the HTML view for the full account graph.",
+            file=sys.stderr,
+        )
     if map_return_code != 0:
         print(
             f"Completed with mapping warning(s): from_audit exit code {map_return_code}",
