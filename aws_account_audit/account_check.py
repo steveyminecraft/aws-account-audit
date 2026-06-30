@@ -99,6 +99,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--inventory",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Collect resource inventory and write separate *-inventory.json / "
+            "*-inventory.log files (default: enabled). Use --no-inventory to skip."
+        ),
+    )
+    parser.add_argument(
         "--inventory-graph",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -244,6 +253,7 @@ def main(argv: list[str] | None = None) -> int:
         region=args.region,
         regions=selected_regions,
         all_regions=False,
+        include_inventory=args.inventory,
     )
     account_id = str(report.metadata.get("account_id") or "unknown-account")
     run_dir = args.output_dir / f"account-{account_id}"

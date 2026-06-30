@@ -216,7 +216,10 @@ Optional flags:
 # Skip slicing the IAM PNG into section tiles
 --no-iam-sections
 
-# Skip overlaying the resource inventory onto the account graph
+# Skip resource inventory collection (no *-inventory files or graph overlay)
+--no-inventory
+
+# Skip overlaying the resource inventory onto the account graph (inventory files still written)
 --no-inventory-graph
 ```
 
