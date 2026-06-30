@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from aws_account_audit.png_tiles import should_tile, tile_png
 from aws_account_audit.session import caller_identity, client, create_session, safe_call
 from aws_network_map.export import _render_png
 from aws_network_map.graph_style import (
@@ -117,7 +118,7 @@ def build_iam_graph(iam_data: dict[str, Any]) -> IamGraph:
     return graph
 
 
-def render_iam_mermaid(graph: IamGraph, *, direction: str = "TB") -> str:
+def render_iam_mermaid(graph: IamGraph, *, direction: str = "LR") -> str:
     lines = [f"flowchart {direction}"]
     mermaid_ids: dict[str, str] = {}
     admin_nodes = _admin_node_ids(graph)
@@ -161,7 +162,7 @@ def render_iam_mermaid(graph: IamGraph, *, direction: str = "TB") -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_iam_html(graph: IamGraph, *, direction: str = "TB") -> str:
+def render_iam_html(graph: IamGraph, *, direction: str = "LR") -> str:
     mermaid = render_iam_mermaid(graph, direction=direction)
     account_label = graph.account_id or "unknown-account"
     summary = graph.summary()
@@ -178,7 +179,7 @@ def render_iam_html(graph: IamGraph, *, direction: str = "TB") -> str:
     )
 
 
-def write_iam_html(graph: IamGraph, path: Path, *, direction: str = "TB") -> None:
+def write_iam_html(graph: IamGraph, path: Path, *, direction: str = "LR") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(render_iam_html(graph, direction=direction), encoding="utf-8")
 
@@ -192,7 +193,9 @@ def generate_iam_outputs(
     *,
     data: dict[str, Any],
     output_base: Path,
-    direction: str = "TB",
+    direction: str = "LR",
+    png_scale: float | None = None,
+    sections: bool = True,
 ) -> IamGraph:
     graph = build_iam_graph(data)
     if graph.account_id is None:
@@ -203,11 +206,43 @@ def generate_iam_outputs(
     output_base = output_base.with_suffix("")
     write_iam_json(graph, output_base.with_suffix(".json"))
     write_iam_html(graph, output_base.with_suffix(".html"), direction=direction)
+    png_path = output_base.with_suffix(".png")
     try:
-        write_iam_png(graph, output_base.with_suffix(".png"), direction=direction)
+        write_iam_png(graph, png_path, direction=direction, scale=png_scale)
     except RuntimeError:
-        pass
+        return graph
+
+    if sections:
+        try:
+            write_iam_sections(png_path, output_base)
+        except RuntimeError as exc:
+            graph.errors.append(f"IAM PNG sections skipped: {exc}")
     return graph
+
+
+def write_iam_sections(png_path: Path, output_base: Path) -> list[Path]:
+    """Cut a large IAM PNG into overlapping, readable section tiles.
+
+    Sections are written to ``<output_base>-sections/`` and only created when the
+    PNG is large enough to benefit. Returns the list of written section paths.
+    """
+    if not png_path.exists():
+        return []
+    try:
+        from PIL import Image
+
+        Image.MAX_IMAGE_PIXELS = None
+        with Image.open(png_path) as img:
+            width, height = img.size
+    except ImportError as exc:
+        raise RuntimeError(
+            "PNG tiling requires Pillow. Install it with `pip install pillow`."
+        ) from exc
+
+    if not should_tile(width, height):
+        return []
+    sections_dir = Path(f"{output_base}-sections")
+    return tile_png(png_path, sections_dir)
 
 
 def write_iam_json(graph: IamGraph, path: Path) -> None:
@@ -224,7 +259,9 @@ def write_iam_json(graph: IamGraph, path: Path) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def write_iam_png(graph: IamGraph, path: Path, *, direction: str = "TB") -> None:
+def write_iam_png(
+    graph: IamGraph, path: Path, *, direction: str = "LR", scale: float | None = None
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     mmd_path = path.with_suffix(".mmd")
     mmd_path.write_text(render_iam_mermaid(graph, direction=direction), encoding="utf-8")
@@ -233,6 +270,7 @@ def write_iam_png(graph: IamGraph, path: Path, *, direction: str = "TB") -> None
         path,
         node_count=len(graph.nodes),
         edge_count=len(graph.edges),
+        scale_override=scale,
     )
     mmd_path.unlink(missing_ok=True)
     if not png_ok:
@@ -403,13 +441,37 @@ def main(argv: list[str] | None = None) -> int:
         "--region", default="eu-west-1", help="Home region (for STS identity lookup)"
     )
     parser.add_argument(
-        "--direction", choices=["LR", "TB"], default="TB", help="Mermaid diagram direction"
+        "--direction",
+        choices=["LR", "TB"],
+        default="LR",
+        help=(
+            "Mermaid diagram direction (default: LR). LR keeps the IAM graph readable; "
+            "TB produces a very wide, hard-to-read PNG for accounts with many policies."
+        ),
     )
     parser.add_argument(
         "--output-base",
         type=Path,
         default=Path("network-maps/iam-graph"),
         help="Base output path; writes .json/.html/.png",
+    )
+    parser.add_argument(
+        "--png-scale",
+        type=float,
+        default=None,
+        help=(
+            "Override PNG render scale to produce one large, zoomable image "
+            "(e.g. 4 or 6). Higher values are sharper but much larger on disk."
+        ),
+    )
+    parser.add_argument(
+        "--sections",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Also slice large PNGs into overlapping, readable section tiles under "
+            "<output-base>-sections/ (default: enabled). Use --no-sections to skip."
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -418,6 +480,8 @@ def main(argv: list[str] | None = None) -> int:
         data=data,
         output_base=args.output_base,
         direction=args.direction,
+        png_scale=args.png_scale,
+        sections=args.sections,
     )
 
     output_base = args.output_base.with_suffix("")
@@ -429,6 +493,14 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Wrote IAM graph HTML: {html_path}", file=sys.stderr)
     if png_path.exists():
         print(f"Wrote IAM graph PNG: {png_path}", file=sys.stderr)
+    sections_dir = Path(f"{output_base}-sections")
+    if sections_dir.exists():
+        section_count = len(sorted(sections_dir.glob("section-*.png")))
+        if section_count:
+            print(
+                f"Wrote {section_count} IAM graph sections: {sections_dir}/",
+                file=sys.stderr,
+            )
     s = graph.summary()
     print(
         f"IAM graph summary: nodes={s['node_count']} edges={s['edge_count']} errors={s['error_count']}",
