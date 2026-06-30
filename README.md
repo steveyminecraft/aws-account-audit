@@ -197,7 +197,7 @@ subgraphs of the account-graph PNG/HTML. Disable the overlay with `--no-inventor
 interactive HTML graphs (marked "full view"), PNGs, and JSON/text reports. Open it in a
 browser to navigate the whole run without depending on the static PNGs.
 
-Graphs use color-coded node types, grouped subgraphs, and a scrollable HTML viewer with legend. PNG exports scale viewport size and render resolution with graph size so large account maps stay sharp when zoomed. The IAM relationship graph defaults to `LR` layout so its PNG stays readable; network graphs default to `TB`.
+Graphs use color-coded node types, grouped subgraphs, and a scrollable HTML viewer with legend. The interactive HTML graphs are click-to-explore: click any node to highlight its full connected chain (and dim everything else), then click empty space or press `Esc` to reset. PNG exports scale viewport size and render resolution with graph size so large account maps stay sharp when zoomed. The IAM relationship graph defaults to `LR` layout so its PNG stays readable; network graphs default to `TB`.
 
 Optional flags:
 

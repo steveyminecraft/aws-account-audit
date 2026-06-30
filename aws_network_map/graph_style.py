@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import html as html_module
+import json
+import re
 from typing import Iterable
 
 # Mermaid classDef styles keyed by CSS class name.
@@ -94,6 +96,121 @@ def kind_class_for_iam(kind: str, *, is_admin: bool = False) -> str | None:
     return IAM_KIND_CLASS.get(kind)
 
 
+# Matches a Mermaid flowchart edge line: ``  src -->|"label"| tgt`` or ``src --> tgt``.
+_MERMAID_EDGE_RE = re.compile(r"^\s*([A-Za-z0-9_]+)\s*-->\s*(?:\|[^|]*\|\s*)?([A-Za-z0-9_]+)")
+
+# Client-side highlighting: click a node to spotlight its connected chain, dim the rest.
+# Kept as a plain string (single braces) so it is not reparsed by the HTML f-string.
+_HIGHLIGHT_CSS = """
+    .diagram-wrap svg g.node {{ cursor: pointer; }}
+    .diagram-wrap svg.focus-active .node {{ opacity: 0.18; transition: opacity 0.15s ease; }}
+    .diagram-wrap svg.focus-active .node.hl {{ opacity: 1; }}
+    .diagram-wrap svg.focus-active path.flowchart-link {{
+      opacity: 0.07;
+      transition: opacity 0.15s ease;
+    }}
+    .diagram-wrap svg.focus-active path.flowchart-link.hl {{ opacity: 1; }}
+    .diagram-wrap svg.focus-active .edgeLabel {{ opacity: 0.12; }}
+    .diagram-wrap svg .node.hl rect,
+    .diagram-wrap svg .node.hl polygon,
+    .diagram-wrap svg .node.hl circle,
+    .diagram-wrap svg .node.hl path {{ stroke-width: 3px; }}
+""".replace("{{", "{").replace("}}", "}")
+
+_HIGHLIGHT_SCRIPT = """
+<script>
+(function () {
+  var EDGES = window.__GRAPH_EDGES__ || [];
+  function ready(cb) {
+    var tries = 0;
+    var timer = setInterval(function () {
+      var svg = document.querySelector('.diagram-wrap .mermaid svg');
+      if (svg && svg.querySelector('g.node')) { clearInterval(timer); cb(svg); }
+      else if (++tries > 200) { clearInterval(timer); }
+    }, 50);
+  }
+  function nodeIdFromEl(el) {
+    var m = /-flowchart-(.+)-\\d+$/.exec(el.id || '');
+    return m ? m[1] : null;
+  }
+  ready(function (svg) {
+    var nodeEls = {};
+    svg.querySelectorAll('g.node').forEach(function (g) {
+      var id = nodeIdFromEl(g);
+      if (!id) return;
+      (nodeEls[id] = nodeEls[id] || []).push(g);
+    });
+    var adj = {};
+    EDGES.forEach(function (e) {
+      (adj[e[0]] = adj[e[0]] || []).push(e[1]);
+      (adj[e[1]] = adj[e[1]] || []).push(e[0]);
+    });
+    var paths = Array.prototype.slice.call(svg.querySelectorAll('path.flowchart-link'));
+    var used = {};
+    var edgeEls = EDGES.map(function (e) {
+      var re = new RegExp('L_' + e[0] + '_' + e[1] + '_\\\\d+$');
+      var el = null;
+      for (var i = 0; i < paths.length; i++) {
+        if (!used[i] && re.test(paths[i].id || '')) { el = paths[i]; used[i] = true; break; }
+      }
+      return { s: e[0], t: e[1], el: el };
+    });
+    function component(start) {
+      var seen = {}; var stack = [start]; seen[start] = true;
+      while (stack.length) {
+        var n = stack.pop();
+        (adj[n] || []).forEach(function (m) { if (!seen[m]) { seen[m] = true; stack.push(m); } });
+      }
+      return seen;
+    }
+    function clear() {
+      svg.classList.remove('focus-active');
+      svg.querySelectorAll('.hl, .dim').forEach(function (el) {
+        el.classList.remove('hl', 'dim');
+      });
+    }
+    function focus(nodeId) {
+      var set = component(nodeId);
+      svg.classList.add('focus-active');
+      Object.keys(nodeEls).forEach(function (id) {
+        var on = !!set[id];
+        nodeEls[id].forEach(function (g) {
+          g.classList.toggle('hl', on);
+          g.classList.toggle('dim', !on);
+        });
+      });
+      edgeEls.forEach(function (e) {
+        if (!e.el) return;
+        var on = !!(set[e.s] && set[e.t]);
+        e.el.classList.toggle('hl', on);
+        e.el.classList.toggle('dim', !on);
+      });
+    }
+    Object.keys(nodeEls).forEach(function (id) {
+      nodeEls[id].forEach(function (g) {
+        g.addEventListener('click', function (ev) { ev.stopPropagation(); focus(id); });
+      });
+    });
+    svg.addEventListener('click', function () { clear(); });
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape') { clear(); }
+    });
+  });
+})();
+</script>
+"""
+
+
+def parse_mermaid_edges(mermaid: str) -> list[list[str]]:
+    """Extract ``[source, target]`` node-id pairs from Mermaid flowchart edge lines."""
+    edges: list[list[str]] = []
+    for line in mermaid.splitlines():
+        match = _MERMAID_EDGE_RE.match(line)
+        if match:
+            edges.append([match.group(1), match.group(2)])
+    return edges
+
+
 def render_interactive_html(
     *,
     title: str,
@@ -103,6 +220,8 @@ def render_interactive_html(
 ) -> str:
     escaped_title = html_module.escape(title)
     escaped_subtitle = html_module.escape(subtitle)
+    edges_json = json.dumps(parse_mermaid_edges(mermaid))
+    interactivity = f"<script>window.__GRAPH_EDGES__ = {edges_json};</script>" + _HIGHLIGHT_SCRIPT
     legend_html = ""
     if legend:
         items = []
@@ -210,17 +329,25 @@ def render_interactive_html(
     .mermaid {{
       min-width: max-content;
     }}
+    .hint {{
+      margin: 0.5rem 0 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }}
+{_HIGHLIGHT_CSS}
   </style>
 </head>
 <body>
   <header>
     <h1>{escaped_title}</h1>
     <p class="subtitle">{escaped_subtitle}</p>
+    <p class="hint">Click a node to highlight its connected chain &middot; click empty space or press Esc to reset</p>
     {legend_html}
   </header>
   <div class="diagram-wrap">
     <pre class="mermaid">{html_module.escape(mermaid)}</pre>
   </div>
+  {interactivity}
 </body>
 </html>
 """
