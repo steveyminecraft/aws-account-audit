@@ -19,6 +19,7 @@ from aws_account_audit.collectors import (
     collect_security_services,
     collect_tagged_resources,
 )
+from aws_account_audit.inventory import collect_account_inventory, write_inventory_files
 from aws_account_audit.models import AuditReport, SectionResult, utc_now_iso
 from aws_account_audit.session import caller_identity, create_session, enabled_regions
 
@@ -49,6 +50,7 @@ def run_audit(
     all_regions: bool = True,
     max_workers: int = 8,
     sections: set[str] | None = None,
+    include_inventory: bool = True,
 ) -> AuditReport:
     session = create_session(profile)
     identity = caller_identity(session, region)
@@ -92,6 +94,14 @@ def run_audit(
             report.sections.append(future.result())
 
     report.sections.sort(key=lambda section: section.name)
+
+    if include_inventory:
+        inventory, inventory_errors = collect_account_inventory(
+            session, scan_regions, home_region=region
+        )
+        report.resource_inventory = inventory
+        report.resource_inventory_errors = inventory_errors
+
     return report
 
 
@@ -113,6 +123,17 @@ def write_report(report: AuditReport, output_dir: Path, formats: set[str]) -> di
         text_path = output_dir / f"{base_name}.log"
         text_path.write_text(render_text_report(payload))
         written["text"] = text_path
+
+    if report.resource_inventory is not None:
+        written.update(
+            write_inventory_files(
+                report.metadata,
+                report.resource_inventory,
+                output_dir,
+                base_name,
+                errors=report.resource_inventory_errors,
+            )
+        )
 
     return written
 

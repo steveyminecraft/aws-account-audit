@@ -429,5 +429,56 @@ class TestWriteHtml(unittest.TestCase):
         self.assertNotIn("sg-aaa111", content)
 
 
+class TestInventoryOverlayRendering(unittest.TestCase):
+    """The account graph renders merged inventory overlay nodes (storage/regions)."""
+
+    def setUp(self) -> None:
+        overlay = {
+            "root": "account:123",
+            "region": "all",
+            "nodes": [
+                {"node_id": "region:eu-west-1", "kind": "region", "label": "Region eu-west-1"},
+                {
+                    "node_id": "s3_bucket:my-bucket",
+                    "kind": "s3_bucket",
+                    "label": "S3 my-bucket",
+                },
+                {
+                    "node_id": "dynamodb_table:sessions",
+                    "kind": "dynamodb_table",
+                    "label": "DynamoDB sessions",
+                },
+                {"node_id": "ec2_instance:i-1", "kind": "ec2_instance", "label": "EC2 web-1"},
+            ],
+            "edges": [
+                {"source": "region:eu-west-1", "target": "s3_bucket:my-bucket", "label": "hosts"},
+                {"source": "region:eu-west-1", "target": "ec2_instance:i-1", "label": "hosts"},
+            ],
+            "ingress_paths": [],
+            "errors": [],
+        }
+        self.graph = ag.merge_maps([overlay])
+        self.mermaid = ag.render_account_mermaid(self.graph)
+
+    def test_region_kind_buckets_to_regions(self) -> None:
+        self.assertEqual(ag._network_bucket("region"), "regions")
+
+    def test_storage_kinds_bucket_to_storage(self) -> None:
+        self.assertEqual(ag._network_bucket("s3_bucket"), "storage")
+        self.assertEqual(ag._network_bucket("dynamodb_table"), "storage")
+        self.assertEqual(ag._network_bucket("ebs_volume"), "storage")
+
+    def test_mermaid_has_storage_and_regions_subgraphs(self) -> None:
+        self.assertIn('"Storage"', self.mermaid)
+        self.assertIn('"Regions"', self.mermaid)
+
+    def test_mermaid_includes_inventory_labels(self) -> None:
+        self.assertIn("S3 my-bucket", self.mermaid)
+        self.assertIn("DynamoDB sessions", self.mermaid)
+
+    def test_storage_nodes_use_storage_class(self) -> None:
+        self.assertIn(":::storage", self.mermaid)
+
+
 if __name__ == "__main__":
     unittest.main()

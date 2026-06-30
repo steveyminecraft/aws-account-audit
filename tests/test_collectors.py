@@ -1,0 +1,156 @@
+"""Tests for resource summarizer helpers in aws_account_audit.inventory."""
+
+from __future__ import annotations
+
+import unittest
+
+from aws_account_audit import inventory as inv
+
+
+class TestSummarizeInstance(unittest.TestCase):
+    def _instance(self) -> dict:
+        return {
+            "InstanceId": "i-0abc",
+            "InstanceType": "t3.micro",
+            "State": {"Name": "running"},
+            "Placement": {"AvailabilityZone": "eu-west-1a"},
+            "ImageId": "ami-123",
+            "PlatformDetails": "Linux/UNIX",
+            "PrivateIpAddress": "10.0.0.5",
+            "PublicIpAddress": "1.2.3.4",
+            "Tags": [{"Key": "Name", "Value": "web-1"}],
+        }
+
+    def test_includes_type(self) -> None:
+        self.assertEqual(inv._summarize_instance(self._instance(), "eu-west-1")["type"], "t3.micro")
+
+    def test_includes_location_az(self) -> None:
+        self.assertEqual(
+            inv._summarize_instance(self._instance(), "eu-west-1")["availability_zone"],
+            "eu-west-1a",
+        )
+
+    def test_includes_name_from_tags(self) -> None:
+        self.assertEqual(inv._summarize_instance(self._instance(), "eu-west-1")["name"], "web-1")
+
+    def test_includes_region(self) -> None:
+        self.assertEqual(
+            inv._summarize_instance(self._instance(), "eu-west-1")["region"], "eu-west-1"
+        )
+
+    def test_missing_fields_do_not_raise(self) -> None:
+        result = inv._summarize_instance({"InstanceId": "i-1"}, "eu-west-1")
+        self.assertEqual(result["id"], "i-1")
+        self.assertIsNone(result["availability_zone"])
+        self.assertIsNone(result["name"])
+
+
+class TestSummarizeVolume(unittest.TestCase):
+    def _volume(self) -> dict:
+        return {
+            "VolumeId": "vol-0abc",
+            "VolumeType": "gp3",
+            "Size": 100,
+            "AvailabilityZone": "eu-west-1b",
+            "State": "in-use",
+            "Encrypted": True,
+            "Iops": 3000,
+        }
+
+    def test_includes_size(self) -> None:
+        self.assertEqual(inv._summarize_volume(self._volume(), "eu-west-1")["size_gb"], 100)
+
+    def test_includes_type(self) -> None:
+        self.assertEqual(inv._summarize_volume(self._volume(), "eu-west-1")["type"], "gp3")
+
+    def test_includes_location_az(self) -> None:
+        self.assertEqual(
+            inv._summarize_volume(self._volume(), "eu-west-1")["availability_zone"], "eu-west-1b"
+        )
+
+
+class TestSummarizeRds(unittest.TestCase):
+    def _db(self) -> dict:
+        return {
+            "DBInstanceIdentifier": "prod-db",
+            "Engine": "postgres",
+            "EngineVersion": "15.4",
+            "DBInstanceClass": "db.t3.medium",
+            "AllocatedStorage": 50,
+            "AvailabilityZone": "eu-west-1a",
+            "MultiAZ": False,
+            "DBInstanceStatus": "available",
+            "PubliclyAccessible": False,
+        }
+
+    def test_includes_version(self) -> None:
+        self.assertEqual(inv._summarize_rds(self._db(), "eu-west-1")["engine_version"], "15.4")
+
+    def test_includes_type_class(self) -> None:
+        self.assertEqual(
+            inv._summarize_rds(self._db(), "eu-west-1")["instance_class"], "db.t3.medium"
+        )
+
+    def test_includes_size_storage(self) -> None:
+        self.assertEqual(inv._summarize_rds(self._db(), "eu-west-1")["allocated_storage_gb"], 50)
+
+
+class TestSummarizeLoadBalancer(unittest.TestCase):
+    def _lb(self) -> dict:
+        return {
+            "LoadBalancerName": "web-alb",
+            "DNSName": "web-alb-123.eu-west-1.elb.amazonaws.com",
+            "Type": "application",
+            "Scheme": "internet-facing",
+            "State": {"Code": "active"},
+            "AvailabilityZones": [{"ZoneName": "eu-west-1a"}, {"ZoneName": "eu-west-1b"}],
+            "VpcId": "vpc-1",
+        }
+
+    def test_includes_type(self) -> None:
+        self.assertEqual(
+            inv._summarize_load_balancer(self._lb(), "eu-west-1")["type"], "application"
+        )
+
+    def test_includes_location_azs(self) -> None:
+        self.assertEqual(
+            inv._summarize_load_balancer(self._lb(), "eu-west-1")["availability_zones"],
+            ["eu-west-1a", "eu-west-1b"],
+        )
+
+
+class TestSummarizeLambda(unittest.TestCase):
+    def _fn(self) -> dict:
+        return {
+            "FunctionName": "processor",
+            "Runtime": "python3.12",
+            "MemorySize": 512,
+            "CodeSize": 10485760,
+            "Version": "$LATEST",
+            "Architectures": ["arm64"],
+            "Handler": "app.handler",
+            "LastModified": "2026-06-01T00:00:00.000+0000",
+        }
+
+    def test_includes_runtime(self) -> None:
+        self.assertEqual(inv._summarize_lambda(self._fn(), "us-east-1")["runtime"], "python3.12")
+
+    def test_includes_size_memory(self) -> None:
+        self.assertEqual(inv._summarize_lambda(self._fn(), "us-east-1")["memory_size_mb"], 512)
+
+    def test_includes_code_size(self) -> None:
+        self.assertEqual(
+            inv._summarize_lambda(self._fn(), "us-east-1")["code_size_bytes"], 10485760
+        )
+
+
+class TestNameFromTags(unittest.TestCase):
+    def test_returns_name_value(self) -> None:
+        self.assertEqual(inv._name_from_tags([{"Key": "Name", "Value": "web-1"}]), "web-1")
+
+    def test_returns_none_when_absent(self) -> None:
+        self.assertIsNone(inv._name_from_tags([{"Key": "env", "Value": "prod"}]))
+
+
+if __name__ == "__main__":
+    unittest.main()

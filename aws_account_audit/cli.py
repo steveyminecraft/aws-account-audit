@@ -59,6 +59,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the text report to stdout in addition to writing files",
     )
+    parser.add_argument(
+        "--inventory",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Also write separate resource inventory files (*-inventory.json / "
+            "*-inventory.log) in addition to the standard audit outputs (default: true)"
+        ),
+    )
     return parser
 
 
@@ -77,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
         all_regions=all_regions,
         max_workers=args.max_workers,
         sections=sections,
+        include_inventory=args.inventory,
     )
 
     formats = {"json", "text"} if args.format == "both" else {args.format}

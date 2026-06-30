@@ -18,6 +18,7 @@ from aws_account_audit.iam_graph import (
     generate_iam_outputs,
     write_iam_data_json,
 )
+from aws_account_audit.inventory import build_inventory_graph
 from aws_account_audit.session import client, create_session, enabled_regions
 from aws_network_map.account_graph import main as account_graph_main
 from aws_network_map.cli import main as network_map_main
@@ -95,6 +96,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Slice the IAM PNG into overlapping, readable section tiles "
             "(default: enabled). Use --no-iam-sections to skip."
+        ),
+    )
+    parser.add_argument(
+        "--inventory-graph",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Merge the resource inventory (EC2/EBS/RDS/ELB/Lambda/S3/DynamoDB) into the "
+            "account graph PNG/HTML (default: enabled). Use --no-inventory-graph to skip."
         ),
     )
     return parser
@@ -275,6 +285,19 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     copied_json_files = _copy_map_jsons([from_audit_dir, all_sg_dir], combined_dir)
+
+    inventory_overlay_path: Path | None = None
+    resource_inventory = getattr(report, "resource_inventory", None)
+    if args.inventory_graph and resource_inventory:
+        overlay = build_inventory_graph(resource_inventory, account_id)
+        if overlay["nodes"]:
+            combined_dir.mkdir(parents=True, exist_ok=True)
+            inventory_overlay_path = combined_dir / "resource-inventory-overlay.json"
+            inventory_overlay_path.write_text(
+                json.dumps(overlay, indent=2, default=str), encoding="utf-8"
+            )
+            copied_json_files += 1
+
     if copied_json_files == 0:
         print("No map JSON files were generated; cannot build account graph.", file=sys.stderr)
         return 1
@@ -320,6 +343,8 @@ def main(argv: list[str] | None = None) -> int:
         "account_id": account_id,
         "audit_json": str(audit_json),
         "audit_text": str(written["text"]),
+        "inventory_json": str(written.get("inventory_json", "")),
+        "inventory_text": str(written.get("inventory_text", "")),
         "iam_audit_json": str(iam_audit_json),
         "iam_shell_audit_rc": iam_shell_rc,
         "iam_graph_json": str(iam_graph_base.with_suffix(".json")),
@@ -331,6 +356,7 @@ def main(argv: list[str] | None = None) -> int:
         "from_audit_rc": from_audit_rc,
         "all_sg_failures": all_sg_failures,
         "copied_map_json_files": copied_json_files,
+        "inventory_overlay_json": str(inventory_overlay_path or ""),
         "account_graph_json": str(account_graph_base.with_suffix(".json")),
         "account_graph_html": str(account_graph_base.with_suffix(".html")),
         "account_graph_png": str(account_graph_base.with_suffix(".png")),

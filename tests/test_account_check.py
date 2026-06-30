@@ -105,6 +105,72 @@ class TestMainPipeline(unittest.TestCase):
     @mock.patch("aws_account_audit.account_check.write_report")
     @mock.patch("aws_account_audit.account_check.run_audit")
     @mock.patch("aws_account_audit.account_check._selected_regions")
+    def test_main_writes_inventory_overlay_and_builds_graph(
+        self,
+        selected_regions_mock: mock.Mock,
+        run_audit_mock: mock.Mock,
+        write_report_mock: mock.Mock,
+        from_audit_main_mock: mock.Mock,
+        collect_sg_mock: mock.Mock,
+        run_all_sg_mock: mock.Mock,
+        copy_map_jsons_mock: mock.Mock,
+        account_graph_main_mock: mock.Mock,
+        iam_shell_mock: mock.Mock,
+        collect_iam_mock: mock.Mock,
+        write_iam_data_mock: mock.Mock,
+        generate_iam_mock: mock.Mock,
+    ) -> None:
+        selected_regions_mock.return_value = ["eu-west-1"]
+        run_audit_mock.return_value = SimpleNamespace(
+            metadata={"account_id": "123456789012"},
+            resource_inventory={
+                "s3_buckets": [{"name": "my-bucket", "region": "eu-west-1"}],
+            },
+        )
+        from_audit_main_mock.return_value = 0
+        collect_sg_mock.return_value = []
+        run_all_sg_mock.return_value = 0
+        # No security-group maps copied; the overlay alone should keep the graph building.
+        copy_map_jsons_mock.return_value = 0
+        account_graph_main_mock.return_value = 0
+        iam_shell_mock.return_value = 0
+        collect_iam_mock.return_value = {"account_id": "123456789012", "errors": []}
+        generate_iam_mock.return_value = SimpleNamespace(summary=lambda: {"node_count": 1})
+
+        with tempfile.TemporaryDirectory() as d:
+            output_dir = Path(d) / "runs"
+            audit_json = output_dir / "account-123456789012" / "audit-runs" / "audit.json"
+            audit_text = output_dir / "account-123456789012" / "audit-runs" / "audit.log"
+            audit_json.parent.mkdir(parents=True, exist_ok=True)
+            audit_json.write_text("{}", encoding="utf-8")
+            audit_text.write_text("ok", encoding="utf-8")
+            write_report_mock.return_value = {"json": audit_json, "text": audit_text}
+
+            rc = ac.main(["--output-dir", str(output_dir), "--profile", "default"])
+
+            self.assertEqual(rc, 0)
+            account_graph_main_mock.assert_called_once()
+            summary_path = output_dir / "account-123456789012" / "account-check-summary.json"
+            payload = json.loads(summary_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["copied_map_json_files"], 1)
+            overlay_path = Path(payload["inventory_overlay_json"])
+            self.assertTrue(overlay_path.exists())
+            overlay = json.loads(overlay_path.read_text(encoding="utf-8"))
+            node_ids = {node["node_id"] for node in overlay["nodes"]}
+            self.assertIn("s3_bucket:my-bucket", node_ids)
+
+    @mock.patch("aws_account_audit.account_check.generate_iam_outputs")
+    @mock.patch("aws_account_audit.account_check.write_iam_data_json")
+    @mock.patch("aws_account_audit.account_check.collect_iam_relationship_data")
+    @mock.patch("aws_account_audit.account_check._run_audit_iam_shell")
+    @mock.patch("aws_account_audit.account_check.account_graph_main")
+    @mock.patch("aws_account_audit.account_check._copy_map_jsons")
+    @mock.patch("aws_account_audit.account_check._run_all_sg_maps")
+    @mock.patch("aws_account_audit.account_check._collect_security_group_targets")
+    @mock.patch("aws_account_audit.account_check.from_audit_main")
+    @mock.patch("aws_account_audit.account_check.write_report")
+    @mock.patch("aws_account_audit.account_check.run_audit")
+    @mock.patch("aws_account_audit.account_check._selected_regions")
     def test_main_returns_error_when_no_map_json_files(
         self,
         selected_regions_mock: mock.Mock,

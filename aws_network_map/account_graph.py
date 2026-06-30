@@ -380,12 +380,14 @@ def render_account_mermaid(graph: AccountGraph, *, direction: str = "TB") -> str
     mermaid_ids: dict[str, str] = {}
 
     subgraph_order = [
+        ("regions", "Regions"),
         ("internet", "Internet"),
         ("cidr", "CIDR blocks"),
         ("security_group", "Security groups"),
         ("network", "Network fabric"),
         ("compute", "Compute"),
         ("lb", "Load balancers"),
+        ("storage", "Storage"),
         ("other", "Other resources"),
     ]
     bucket_keys = {key for key, _ in subgraph_order}
@@ -423,6 +425,8 @@ def render_account_mermaid(graph: AccountGraph, *, direction: str = "TB") -> str
 
 
 def _network_bucket(kind: str) -> str:
+    if kind in {"region"}:
+        return "regions"
     if kind in {"internet"}:
         return "internet"
     if kind in {"cidr"}:
@@ -435,6 +439,8 @@ def _network_bucket(kind: str) -> str:
         return "compute"
     if kind in {"load_balancer", "target_group"}:
         return "lb"
+    if kind in {"ebs_volume", "s3_bucket", "dynamodb_table"}:
+        return "storage"
     return "other"
 
 
