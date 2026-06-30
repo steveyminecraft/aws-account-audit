@@ -589,15 +589,15 @@ def _collect_waf_web_acls(
 
 def _paginate_waf(func: Callable[..., Any], *, scope: str) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
-    marker: str | None = None
+    next_marker: str | None = None
     while True:
         params: dict[str, Any] = {"Scope": scope, "Limit": 100}
-        if marker:
-            params["Marker"] = marker
+        if next_marker:
+            params["NextMarker"] = next_marker
         response = func(**params)
         items.extend(response.get("WebACLs", []))
-        marker = response.get("NextMarker")
-        if not marker:
+        next_marker = response.get("NextMarker")
+        if not next_marker:
             break
     return items
 
