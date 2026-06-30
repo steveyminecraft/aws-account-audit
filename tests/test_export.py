@@ -12,6 +12,7 @@ from aws_network_map.export import (
     compute_png_dimensions,
 )
 from aws_network_map.graph_style import (
+    MERMAID_MAX_EDGES,
     MERMAID_MAX_TEXT_SIZE,
     parse_mermaid_edges,
     render_interactive_html,
@@ -105,12 +106,18 @@ class TestEstimateMermaidCounts(unittest.TestCase):
 
 
 class TestMermaidLimits(unittest.TestCase):
-    def test_mermaid_config_allows_large_diagrams(self) -> None:
+    def _config(self) -> dict:
         config_path = (
             Path(__file__).resolve().parents[1] / "aws_network_map" / "mermaid-config.json"
         )
-        payload = json.loads(config_path.read_text(encoding="utf-8"))
-        self.assertGreaterEqual(payload["maxTextSize"], 500_000)
+        return json.loads(config_path.read_text(encoding="utf-8"))
+
+    def test_mermaid_config_allows_large_diagrams(self) -> None:
+        self.assertGreaterEqual(self._config()["maxTextSize"], 500_000)
+
+    def test_mermaid_config_raises_max_edges(self) -> None:
+        # Mermaid 11 defaults maxEdges to 500; account graphs need far more.
+        self.assertGreaterEqual(self._config()["maxEdges"], 10_000)
 
     def test_html_includes_max_text_size(self) -> None:
         html = render_interactive_html(
@@ -119,6 +126,14 @@ class TestMermaidLimits(unittest.TestCase):
             mermaid='flowchart TB\n    a["node"]',
         )
         self.assertIn(f"maxTextSize: {MERMAID_MAX_TEXT_SIZE}", html)
+
+    def test_html_includes_max_edges(self) -> None:
+        html = render_interactive_html(
+            title="Test graph",
+            subtitle="Nodes: 1",
+            mermaid='flowchart TB\n    a["node"]',
+        )
+        self.assertIn(f"maxEdges: {MERMAID_MAX_EDGES}", html)
 
 
 class TestParseMermaidEdges(unittest.TestCase):

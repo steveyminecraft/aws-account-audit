@@ -1,5 +1,6 @@
 {
   "maxTextSize": 900000,
+  "maxEdges": 100000,
   "flowchart": {
     "htmlLabels": true,
     "curve": "basis",
