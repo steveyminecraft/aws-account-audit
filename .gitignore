@@ -1,6 +1,7 @@
 node_modules/
 network-maps/
 audit-runs/
+account-check-runs/
 .venv/
 __pycache__/
 *.pyc
