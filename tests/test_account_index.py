@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -102,6 +103,86 @@ class TestWriteAccountIndexHtml(unittest.TestCase):
             self.assertTrue(path.exists())
             self.assertEqual(path.name, "account-view.html")
             self.assertIn("123456789012", path.read_text(encoding="utf-8"))
+
+
+def _org_summary(run_root: Path) -> dict:
+    account_dir = run_root / "account-123456789012"
+    account_dir.mkdir(parents=True, exist_ok=True)
+    audit_dir = account_dir / "audit-runs"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    audit_json = audit_dir / "audit.json"
+    audit_json.write_text(
+        json.dumps(
+            {
+                "summary": {
+                    "finding_count": 3,
+                    "resource_count": 12,
+                    "findings_by_severity": {"HIGH": 2, "MEDIUM": 1},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    account_view = account_dir / "account-view.html"
+    account_view.write_text("<html>account</html>", encoding="utf-8")
+    return {
+        "organization_id": "o-abc123",
+        "organization_arn": "arn:aws:organizations::123456789012:organization/o-abc123",
+        "master_account_id": "123456789012",
+        "role_name": "OrganizationAccountAccessRole",
+        "accounts_requested": 2,
+        "accounts_failed": 1,
+        "accounts": [
+            {
+                "account_id": "123456789012",
+                "account_name": "management",
+                "scan_status": "failed",
+                "summary": {
+                    "audit_json": str(audit_json),
+                    "account_view_html": str(account_view),
+                    "iam_graph_summary": {"role_count": 5},
+                },
+            },
+            {
+                "account_id": "210987654321",
+                "account_name": "member",
+                "scan_status": "assume_role_failed",
+                "error": "sts.assume_role: AccessDenied",
+            },
+        ],
+    }
+
+
+class TestRenderOrganizationIndexHtml(unittest.TestCase):
+    def test_renders_org_table_with_account_links(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            run_root = Path(d)
+            org_dir = run_root / "organization-o-abc123"
+            summary = _org_summary(run_root)
+            html = ai.render_organization_index_html(
+                org_summary=summary,
+                org_dir=org_dir,
+                output_dir=run_root,
+            )
+            self.assertIn("Organization view: o-abc123", html)
+            self.assertIn("123456789012", html)
+            self.assertIn("HIGH: 2", html)
+            self.assertIn("../account-123456789012/account-view.html", html)
+            self.assertIn("assume role failed", html)
+            self.assertIn("AccessDenied", html)
+
+    def test_writes_organization_view_file(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            run_root = Path(d)
+            org_dir = run_root / "organization-o-abc123"
+            summary = _org_summary(run_root)
+            path = ai.write_organization_index_html(
+                org_summary=summary,
+                org_dir=org_dir,
+                output_dir=run_root,
+            )
+            self.assertEqual(path.name, "organization-view.html")
+            self.assertIn("organization-check-summary.json", path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

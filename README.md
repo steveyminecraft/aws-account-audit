@@ -173,11 +173,52 @@ override. For very large accounts, open the `.html` file for full pan/zoom inste
 
 For a single command that audits an account, maps resources, builds an account graph, and runs a full IAM audit with relationship graphs:
 
+For a single-command full account check across all enabled regions:
+
+```bash
+python -m aws_account_audit.account_check \
+  --profile my-profile \
+  --all-regions \
+  --output-dir ./account-check-runs
+```
+
+To limit the run to one region, pass `--region` (without `--all-regions`):
+
 ```bash
 python -m aws_account_audit.account_check \
   --profile my-profile \
   --region eu-west-1 \
   --output-dir ./account-check-runs
+```
+
+To scan every active account in an AWS Organization (opt-in; off by default), run from the
+management account (or another principal with `organizations:ListAccounts` and permission to
+assume a cross-account role in each member account):
+
+```bash
+python -m aws_account_audit.account_check \
+  --profile org-mgmt \
+  --scan-organization \
+  --org-role-name OrganizationAccountAccessRole \
+  --region eu-west-1 \
+  --output-dir ./account-check-runs
+```
+
+Per-account outputs still land under `./account-check-runs/account-<account-id>/`. The
+management account uses your caller credentials directly; member accounts are scanned via
+`sts:AssumeRole`. Org-level indexes are written to
+`./account-check-runs/organization-<org-id>/organization-check-summary.json` and
+`./account-check-runs/organization-<org-id>/organization-view.html` (links into each
+account's `account-view.html` with finding counts).
+
+Optional filters:
+
+```bash
+# Only specific accounts
+python -m aws_account_audit.account_check --scan-organization --org-accounts 111111111111 222222222222 ...
+
+# Skip accounts
+python -m aws_account_audit.account_check --scan-organization --org-exclude-accounts 333333333333 ...
 ```
 
 This writes grouped outputs under `./account-check-runs/account-<account-id>/`:

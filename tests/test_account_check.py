@@ -8,6 +8,35 @@ from types import SimpleNamespace
 from unittest import mock
 
 from aws_account_audit import account_check as ac
+from aws_account_audit.session import region_was_explicit
+
+
+class TestSelectedRegionsFromArgv(unittest.TestCase):
+    @mock.patch("aws_account_audit.session.enabled_regions")
+    def test_main_limits_to_explicit_region_flag(self, enabled_mock: mock.Mock) -> None:
+        enabled_mock.return_value = ["eu-west-1", "us-east-1"]
+        regions = ac._selected_regions(
+            None,
+            "eu-west-1",
+            None,
+            None,
+            region_was_explicit(["--profile", "default", "--region", "eu-west-1"]),
+        )
+        self.assertEqual(regions, ["eu-west-1"])
+        enabled_mock.assert_not_called()
+
+    @mock.patch("aws_account_audit.session.enabled_regions")
+    def test_main_scans_all_regions_when_region_not_explicit(self, enabled_mock: mock.Mock) -> None:
+        enabled_mock.return_value = ["eu-west-1", "us-east-1"]
+        regions = ac._selected_regions(
+            None,
+            "eu-west-1",
+            None,
+            None,
+            region_was_explicit(["--profile", "default"]),
+        )
+        self.assertEqual(regions, ["eu-west-1", "us-east-1"])
+        enabled_mock.assert_called_once()
 
 
 class TestCopyMapJsons(unittest.TestCase):

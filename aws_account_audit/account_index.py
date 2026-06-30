@@ -9,6 +9,7 @@ views as the primary 'full view' and lists every other artifact for quick access
 from __future__ import annotations
 
 import html as html_module
+import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -226,6 +227,345 @@ def render_account_index_html(
 </body>
 </html>
 """
+
+
+def _resolve_artifact_path(value: str | None, *, output_dir: Path) -> Path | None:
+    if not value:
+        return None
+    path = Path(value)
+    candidates = [
+        path,
+        output_dir.parent / path,
+        Path.cwd() / path,
+        output_dir / path,
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    if path.suffix:
+        return path
+    return None
+
+
+def extract_audit_metrics(audit_json_path: Path | None) -> dict[str, object]:
+    if audit_json_path is None or not audit_json_path.is_file():
+        return {}
+    try:
+        payload = json.loads(audit_json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    summary = payload.get("summary") or {}
+    return {
+        "finding_count": int(summary.get("finding_count") or 0),
+        "resource_count": int(summary.get("resource_count") or 0),
+        "findings_by_severity": dict(summary.get("findings_by_severity") or {}),
+    }
+
+
+def _severity_badges(findings_by_severity: dict[str, object]) -> str:
+    order = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
+    badges: list[str] = []
+    for severity in order:
+        count = findings_by_severity.get(severity)
+        if not count:
+            continue
+        css = severity.lower()
+        badges.append(
+            f'<span class="severity {css}">{html_module.escape(severity)}: '
+            f"{html_module.escape(str(count))}</span>"
+        )
+    return " ".join(badges) if badges else '<span class="muted">none</span>'
+
+
+def _scan_status_badge(scan_status: str | None) -> str:
+    status = scan_status or "unknown"
+    css = {
+        "ok": "ok",
+        "failed": "failed",
+        "assume_role_failed": "blocked",
+    }.get(status, "unknown")
+    return (
+        f'<span class="scan-status {css}">{html_module.escape(status.replace("_", " "))}</span>'
+    )
+
+
+def render_organization_index_html(
+    *,
+    org_summary: dict,
+    org_dir: Path,
+    output_dir: Path,
+    generated_at: datetime | None = None,
+) -> str:
+    """Build an HTML index linking every account in an organization scan."""
+    organization_id = str(org_summary.get("organization_id") or "unknown-organization")
+    generated_at = generated_at or datetime.now(timezone.utc)
+    accounts = org_summary.get("accounts") or []
+
+    account_rows: list[str] = []
+    total_findings = 0
+    total_resources = 0
+    scanned_accounts = 0
+
+    for account in accounts:
+        account_id = str(account.get("account_id") or "")
+        account_name = str(account.get("account_name") or account_id)
+        scan_status = str(account.get("scan_status") or "unknown")
+        summary = account.get("summary") or {}
+        account_view = _resolve_artifact_path(
+            str(summary.get("account_view_html") or ""),
+            output_dir=output_dir,
+        )
+        if account_view is None and account_id:
+            candidate = output_dir / f"account-{account_id}" / "account-view.html"
+            account_view = candidate if candidate.is_file() else candidate
+
+        audit_metrics: dict[str, object] = {}
+        if scan_status != "assume_role_failed":
+            audit_json = _resolve_artifact_path(
+                str(summary.get("audit_json") or ""),
+                output_dir=output_dir,
+            )
+            audit_metrics = extract_audit_metrics(audit_json)
+            scanned_accounts += 1
+            total_findings += int(audit_metrics.get("finding_count") or 0)
+            total_resources += int(audit_metrics.get("resource_count") or 0)
+
+        iam_summary = summary.get("iam_graph_summary") or {}
+        findings_by_severity = audit_metrics.get("findings_by_severity") or {}
+
+        if scan_status == "assume_role_failed":
+            details = html_module.escape(str(account.get("error") or "assume role failed"))
+            account_cell = (
+                f"<strong>{html_module.escape(account_id)}</strong><br>"
+                f'<span class="muted">{html_module.escape(account_name)}</span>'
+            )
+            link_cell = f'<span class="muted">{details}</span>'
+            findings_cell = '<span class="muted">—</span>'
+            resources_cell = '<span class="muted">—</span>'
+            roles_cell = '<span class="muted">—</span>'
+        else:
+            account_cell = (
+                f"<strong>{html_module.escape(account_id)}</strong><br>"
+                f'<span class="muted">{html_module.escape(account_name)}</span>'
+            )
+            rel_view = _rel(account_view, org_dir)
+            if rel_view and account_view is not None:
+                link_cell = (
+                    f'<a href="{html_module.escape(rel_view)}">Open account view</a>'
+                )
+            else:
+                link_cell = '<span class="muted">account view not generated</span>'
+            findings_cell = _severity_badges(findings_by_severity)
+            resources_cell = html_module.escape(str(audit_metrics.get("resource_count", "—")))
+            roles_cell = html_module.escape(str(iam_summary.get("role_count", "—")))
+
+        account_rows.append(
+            "<tr>"
+            f"<td>{account_cell}</td>"
+            f"<td>{_scan_status_badge(scan_status)}</td>"
+            f"<td>{findings_cell}</td>"
+            f"<td>{resources_cell}</td>"
+            f"<td>{roles_cell}</td>"
+            f"<td>{link_cell}</td>"
+            "</tr>"
+        )
+
+    if not account_rows:
+        account_rows.append(
+            '<tr><td colspan="6" class="muted">No accounts were scanned.</td></tr>'
+        )
+
+    summary_json = _rel(org_dir / "organization-check-summary.json", org_dir) or (
+        "organization-check-summary.json"
+    )
+
+    stat_pairs = [
+        ("Organization", organization_id),
+        ("Accounts listed", len(accounts)),
+        ("Accounts scanned", scanned_accounts),
+        ("Accounts failed", org_summary.get("accounts_failed", "-")),
+        ("Total findings", total_findings),
+        ("Total resources", total_resources),
+        ("Assume role", org_summary.get("role_name", "-")),
+    ]
+    stats_html = "".join(
+        f'<div class="stat"><span class="stat-value">{html_module.escape(str(value))}</span>'
+        f'<span class="stat-label">{html_module.escape(str(label))}</span></div>'
+        for label, value in stat_pairs
+    )
+
+    generated_label = generated_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+    master_account_id = html_module.escape(str(org_summary.get("master_account_id") or "—"))
+    organization_arn = html_module.escape(str(org_summary.get("organization_arn") or "—"))
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Organization view: {html_module.escape(organization_id)}</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #f8fafc;
+      --panel: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --accent: #2563eb;
+      --ok: #166534;
+      --failed: #b45309;
+      --blocked: #b91c1c;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: Inter, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.5;
+    }}
+    header {{
+      padding: 1.5rem;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+    }}
+    h1 {{ margin: 0 0 0.35rem; font-size: 1.5rem; }}
+    .subtitle {{ margin: 0; color: var(--muted); font-size: 0.9rem; }}
+    .meta {{
+      margin: 0.75rem 0 0;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }}
+    .stats {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }}
+    .stat {{
+      display: flex;
+      flex-direction: column;
+      padding: 0.5rem 0.85rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+      min-width: 5rem;
+    }}
+    .stat-value {{ font-size: 1.2rem; font-weight: 600; }}
+    .stat-label {{ font-size: 0.75rem; color: var(--muted); text-transform: uppercase; }}
+    main {{ padding: 1.25rem; }}
+    .card {{
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+    }}
+    .card h2 {{ margin: 0 0 0.85rem; font-size: 1.05rem; }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }}
+    th, td {{
+      padding: 0.65rem 0.5rem;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }}
+    th {{
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: var(--muted);
+    }}
+    a {{ color: var(--accent); text-decoration: none; }}
+    a:hover {{ text-decoration: underline; }}
+    .muted {{ color: var(--muted); font-style: italic; }}
+    .scan-status {{
+      display: inline-block;
+      padding: 0.1rem 0.45rem;
+      border-radius: 0.4rem;
+      font-size: 0.75rem;
+      text-transform: capitalize;
+      border: 1px solid var(--border);
+      background: var(--bg);
+    }}
+    .scan-status.ok {{ color: var(--ok); border-color: #bbf7d0; background: #f0fdf4; }}
+    .scan-status.failed {{ color: var(--failed); border-color: #fde68a; background: #fffbeb; }}
+    .scan-status.blocked {{ color: var(--blocked); border-color: #fecaca; background: #fef2f2; }}
+    .severity {{
+      display: inline-block;
+      margin: 0.1rem 0.25rem 0.1rem 0;
+      padding: 0.05rem 0.4rem;
+      border-radius: 0.35rem;
+      font-size: 0.72rem;
+      border: 1px solid var(--border);
+      background: var(--bg);
+    }}
+    .severity.critical {{ color: #991b1b; background: #fef2f2; border-color: #fecaca; }}
+    .severity.high {{ color: #9a3412; background: #fff7ed; border-color: #fed7aa; }}
+    .severity.medium {{ color: #a16207; background: #fefce8; border-color: #fde68a; }}
+    .severity.low {{ color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }}
+    .footer {{
+      margin-top: 1rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>AWS organization view: {html_module.escape(organization_id)}</h1>
+    <p class="subtitle">Organization-wide account-check overview &middot; generated {generated_label}</p>
+    <p class="meta">Management account: {master_account_id}<br>ARN: {organization_arn}</p>
+    <div class="stats">{stats_html}</div>
+  </header>
+  <main>
+    <section class="card">
+      <h2>Member accounts</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Account</th>
+            <th>Scan</th>
+            <th>Findings</th>
+            <th>Resources</th>
+            <th>IAM roles</th>
+            <th>View</th>
+          </tr>
+        </thead>
+        <tbody>
+          {''.join(account_rows)}
+        </tbody>
+      </table>
+      <p class="footer">Machine-readable index: <a href="{html_module.escape(summary_json)}">organization-check-summary.json</a></p>
+    </section>
+  </main>
+</body>
+</html>
+"""
+
+
+def write_organization_index_html(
+    *,
+    org_summary: dict,
+    org_dir: Path,
+    output_dir: Path,
+) -> Path:
+    """Write the organization index page into ``org_dir`` and return its path."""
+    org_dir.mkdir(parents=True, exist_ok=True)
+    index_path = org_dir / "organization-view.html"
+    index_path.write_text(
+        render_organization_index_html(
+            org_summary=org_summary,
+            org_dir=org_dir,
+            output_dir=output_dir,
+        ),
+        encoding="utf-8",
+    )
+    return index_path
 
 
 def write_account_index_html(
