@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import tempfile
@@ -20,8 +21,13 @@ from aws_account_audit.snowflake.index import (
 )
 from aws_account_audit.snowflake.session import (
     SnowflakeConfig,
+    describe_auth_plan,
+    find_connections_toml,
+    is_browser_authenticator,
+    load_config_from_connection,
     load_config_from_env,
     merge_config,
+    uses_password_authenticator,
 )
 
 
@@ -40,12 +46,79 @@ class TestSnowflakeSession(unittest.TestCase):
         kwargs = config.connect_kwargs()
         self.assertEqual(kwargs["account"], "xy12345")
         self.assertEqual(kwargs["user"], "AUDITOR")
-        self.assertEqual(kwargs["password"], "secret")
+        self.assertNotIn("password", kwargs)
         self.assertEqual(kwargs["role"], "SECURITYADMIN")
         self.assertEqual(kwargs["warehouse"], "AUDIT_WH")
         self.assertEqual(kwargs["database"], "SNOWFLAKE")
         self.assertEqual(kwargs["schema"], "ACCOUNT_USAGE")
         self.assertEqual(kwargs["authenticator"], "externalbrowser")
+
+    def test_username_password_mfa_includes_passcode(self) -> None:
+        config = SnowflakeConfig(
+            account="xy12345",
+            user="AUDITOR",
+            password="secret",
+            authenticator="username_password_mfa",
+            passcode="123456",
+        )
+        kwargs = config.connect_kwargs()
+        self.assertEqual(kwargs["authenticator"], "username_password_mfa")
+        self.assertEqual(kwargs["password"], "secret")
+        self.assertEqual(kwargs["passcode"], "123456")
+
+    def test_describe_auth_plan_for_externalbrowser(self) -> None:
+        config = SnowflakeConfig(
+            account="myorg-myaccount",
+            user="jdoe",
+            authenticator="externalbrowser",
+        )
+        summary = describe_auth_plan(config)
+        self.assertIn("browser SSO", summary)
+        self.assertIn("will_send_password: False", summary)
+
+    def test_is_browser_authenticator(self) -> None:
+        self.assertTrue(is_browser_authenticator("externalbrowser"))
+        self.assertFalse(is_browser_authenticator("username_password_mfa"))
+        config = SnowflakeConfig(
+            account="xy12345",
+            user="AUDITOR",
+            authenticator="EXTERNALBROWSER",
+        )
+        self.assertEqual(config.connect_kwargs()["authenticator"], "externalbrowser")
+
+    def test_load_config_from_connection_toml(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            connections_file = Path(tmp) / "connections.toml"
+            connections_file.write_text(
+                """
+default_connection_name = "work"
+
+[work]
+account = "myorg-myaccount"
+user = "jdoe"
+authenticator = "externalbrowser"
+warehouse = "AUDIT_WH"
+role = "SECURITYADMIN"
+""".strip(),
+                encoding="utf-8",
+            )
+            config = load_config_from_connection(connections_path=connections_file)
+            self.assertEqual(config.connection_name, "work")
+            self.assertEqual(config.account, "myorg-myaccount")
+            self.assertEqual(config.authenticator, "externalbrowser")
+            self.assertNotIn("password", config.connect_kwargs())
+
+    def test_find_connections_toml_prefers_snowflake_home(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            snowflake_home = Path(tmp) / ".snowflake"
+            snowflake_home.mkdir()
+            connections_file = snowflake_home / "connections.toml"
+            connections_file.write_text(
+                '[default]\naccount = "acct"\nuser = "user"\n',
+                encoding="utf-8",
+            )
+            with mock.patch.dict(os.environ, {"SNOWFLAKE_HOME": str(snowflake_home)}, clear=False):
+                self.assertEqual(find_connections_toml(), connections_file)
 
     def test_load_config_from_env(self) -> None:
         env = {
@@ -576,6 +649,68 @@ class TestRunSnowflakeAudit(unittest.TestCase):
 
 
 class TestSnowflakeCli(unittest.TestCase):
+    def test_uses_password_authenticator_defaults_to_true(self) -> None:
+        self.assertTrue(uses_password_authenticator(None))
+        self.assertFalse(uses_password_authenticator("externalbrowser"))
+
+    def test_resolve_config_from_named_connection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            connections_file = Path(tmp) / "connections.toml"
+            connections_file.write_text(
+                """
+[work]
+account = "myorg-myaccount"
+user = "jdoe"
+authenticator = "externalbrowser"
+""".strip(),
+                encoding="utf-8",
+            )
+            args = argparse.Namespace(
+                account=None,
+                user=None,
+                password=None,
+                role=None,
+                warehouse=None,
+                database=None,
+                schema=None,
+                authenticator=None,
+                private_key_path=None,
+                passcode=None,
+                connection="work",
+                connections_file=connections_file,
+                show_config=False,
+            )
+            config = resolve_config(args)
+            self.assertEqual(config.connection_name, "work")
+            self.assertEqual(config.authenticator, "externalbrowser")
+
+    def test_resolve_config_prefers_externalbrowser_env_without_password(self) -> None:
+        env = {
+            "SNOWFLAKE_ACCOUNT": "myorg-myaccount",
+            "SNOWFLAKE_USER": "jdoe",
+            "SNOWFLAKE_PASSWORD": "should-not-be-used",
+            "SNOWFLAKE_AUTHENTICATOR": "externalbrowser",
+        }
+        args = argparse.Namespace(
+            account=None,
+            user=None,
+            password=None,
+            role=None,
+            warehouse=None,
+            database=None,
+            schema=None,
+            authenticator=None,
+            private_key_path=None,
+            passcode=None,
+            connection=None,
+            connections_file=None,
+            show_config=False,
+        )
+        with mock.patch.dict(os.environ, env, clear=True):
+            config = resolve_config(args)
+        self.assertEqual(config.authenticator, "externalbrowser")
+        self.assertNotIn("password", config.connect_kwargs())
+
     def test_resolve_config_uses_cli_over_env(self) -> None:
         env = {
             "SNOWFLAKE_ACCOUNT": "env-account",
@@ -592,6 +727,10 @@ class TestSnowflakeCli(unittest.TestCase):
             schema=None,
             authenticator=None,
             private_key_path=None,
+            passcode=None,
+            connection=None,
+            connections_file=None,
+            show_config=False,
         )
         with mock.patch.dict(os.environ, env, clear=True):
             config = resolve_config(args)
