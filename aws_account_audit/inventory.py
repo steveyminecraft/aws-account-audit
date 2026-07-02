@@ -13,6 +13,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from aws_account_audit.kms import collect_regional_kms_inventory, format_kms_datetime
 from aws_account_audit.models import utc_now_iso
 from aws_account_audit.session import client, get_bucket_policy_status, safe_call
 
@@ -28,6 +29,7 @@ CATEGORIES: tuple[str, ...] = (
     "eventbridge_rules",
     "s3_buckets",
     "dynamodb_tables",
+    "kms_keys",
     "waf_web_acls",
 )
 
@@ -508,6 +510,10 @@ def _collect_regional_inventory(
         errors.append(ddb_error)
     inventory["dynamodb_tables"] = [{"name": table, "region": region} for table in tables or []]
 
+    kms_keys, kms_errors = collect_regional_kms_inventory(session, region)
+    errors.extend(kms_errors)
+    inventory["kms_keys"] = kms_keys
+
     return inventory, errors
 
 
@@ -930,6 +936,19 @@ def _dynamodb_graph_label(item: dict[str, Any]) -> str:
     return f"DynamoDB {item.get('name')}"
 
 
+def _kms_graph_label(item: dict[str, Any]) -> str:
+    detail = _join(
+        item.get("key_manager"),
+        item.get("key_state"),
+        "rotation on" if item.get("rotation_enabled") else None,
+        f"last used {format_kms_datetime(item.get('last_used_at'))}"
+        if item.get("last_used_at")
+        else "no recent use",
+    )
+    label = item.get("alias") or item.get("id")
+    return f"KMS {label} ({detail})" if detail else f"KMS {label}"
+
+
 class _GraphSpec:
     def __init__(
         self,
@@ -967,6 +986,7 @@ _GRAPH_SPECS: tuple[_GraphSpec, ...] = (
     ),
     _GraphSpec("s3_buckets", "s3_bucket", lambda i: i.get("name"), _s3_graph_label),
     _GraphSpec("dynamodb_tables", "dynamodb_table", lambda i: i.get("name"), _dynamodb_graph_label),
+    _GraphSpec("kms_keys", "kms_key", lambda i: i.get("id"), _kms_graph_label),
     _GraphSpec(
         "waf_web_acls",
         "waf_web_acl",
@@ -1118,6 +1138,30 @@ _TABLE_SPECS: tuple[_TableSpec, ...] = (
         lambda t: [
             _text(t.get("name")),
             _text(t.get("region")),
+        ],
+    ),
+    _TableSpec(
+        "kms_keys",
+        "KMS Keys",
+        [
+            "Alias / ID",
+            "Manager",
+            "State",
+            "Usage",
+            "Rotation",
+            "Created",
+            "Last used",
+            "Location",
+        ],
+        lambda k: [
+            _text(k.get("alias") or k.get("id")),
+            _text(k.get("key_manager")),
+            _text(k.get("key_state")),
+            _text(k.get("key_usage")),
+            _text(k.get("rotation_enabled")),
+            format_kms_datetime(k.get("creation_date")),
+            format_kms_datetime(k.get("last_used_at")),
+            _text(k.get("region")),
         ],
     ),
     _TableSpec(
