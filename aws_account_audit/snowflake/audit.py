@@ -6,7 +6,11 @@ from typing import Any
 
 from aws_account_audit import __version__
 from aws_account_audit.models import AuditReport, utc_now_iso
-from aws_account_audit.snowflake.collectors import collect_identity, collect_security, collect_user_grants
+from aws_account_audit.snowflake.collectors import (
+    collect_identity,
+    collect_security,
+    collect_user_grants,
+)
 from aws_account_audit.snowflake.inventory import collect_snowflake_inventory, write_inventory_files
 from aws_account_audit.snowflake.session import SnowflakeConfig, connect
 
@@ -60,7 +64,9 @@ def write_snowflake_report(
 ) -> dict[str, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = report.metadata["generated_at"].replace(":", "").replace("+00:00", "Z")
-    account = report.metadata.get("account") or report.metadata.get("account_id") or "unknown-account"
+    account = (
+        report.metadata.get("account") or report.metadata.get("account_id") or "unknown-account"
+    )
     base_name = f"snowflake-{account}-{timestamp}"
 
     written: dict[str, Path] = {}

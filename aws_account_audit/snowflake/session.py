@@ -64,9 +64,7 @@ def load_config_from_env() -> SnowflakeConfig:
     account = os.environ.get("SNOWFLAKE_ACCOUNT", "").strip()
     user = os.environ.get("SNOWFLAKE_USER", "").strip()
     if not account or not user:
-        raise ValueError(
-            "SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER environment variables are required"
-        )
+        raise ValueError("SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER environment variables are required")
     return SnowflakeConfig(
         account=account,
         user=user,

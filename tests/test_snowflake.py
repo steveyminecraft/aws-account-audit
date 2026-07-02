@@ -306,7 +306,9 @@ class TestSnowflakeCollectors(unittest.TestCase):
     def test_collect_user_grants_show_fallback_loops_users(self) -> None:
         connection = mock.Mock()
 
-        def _execute_query(_conn: mock.Mock, sql: str, **_kwargs: object) -> tuple[list[dict], str | None]:
+        def _execute_query(
+            _conn: mock.Mock, sql: str, **_kwargs: object
+        ) -> tuple[list[dict], str | None]:
             if sql == "SHOW USERS":
                 return ([{"name": "ALICE"}], None)
             if sql == "SHOW GRANTS TO USER ALICE":
@@ -317,6 +319,7 @@ class TestSnowflakeCollectors(unittest.TestCase):
             "aws_account_audit.snowflake.collectors.execute_query",
             side_effect=_execute_query,
         ):
+
             def _fake_fallback(
                 conn: mock.Mock,
                 _primary: str,

@@ -6,7 +6,11 @@ import sys
 from pathlib import Path
 
 from aws_account_audit import __version__
-from aws_account_audit.snowflake.audit import render_text_report, run_snowflake_audit, write_snowflake_report
+from aws_account_audit.snowflake.audit import (
+    render_text_report,
+    run_snowflake_audit,
+    write_snowflake_report,
+)
 from aws_account_audit.snowflake.index import (
     build_summary,
     write_snowflake_findings_html,
@@ -20,7 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
         description="Run a read-only Snowflake account audit with inventory and security findings.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    parser.add_argument("--account", help="Snowflake account identifier (overrides SNOWFLAKE_ACCOUNT)")
+    parser.add_argument(
+        "--account", help="Snowflake account identifier (overrides SNOWFLAKE_ACCOUNT)"
+    )
     parser.add_argument("--user", help="Snowflake user (overrides SNOWFLAKE_USER)")
     parser.add_argument("--password", help="Snowflake password (overrides SNOWFLAKE_PASSWORD)")
     parser.add_argument("--role", help="Snowflake role (overrides SNOWFLAKE_ROLE)")
@@ -87,7 +93,9 @@ def main(argv: list[str] | None = None) -> int:
     report, connection = run_snowflake_audit(config, include_inventory=not args.no_inventory)
     connection.close()
 
-    account = str(report.metadata.get("account") or report.metadata.get("account_id") or "unknown-account")
+    account = str(
+        report.metadata.get("account") or report.metadata.get("account_id") or "unknown-account"
+    )
     run_dir = args.output_dir / f"account-{account}"
     audit_dir = run_dir / "audit-runs"
     formats = {"json", "text"}

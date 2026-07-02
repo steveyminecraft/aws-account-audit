@@ -17,9 +17,7 @@ CATEGORIES = (
     "databases",
 )
 
-PRIVILEGED_ROLES = frozenset(
-    {"ACCOUNTADMIN", "SECURITYADMIN", "SYSADMIN", "USERADMIN", "ORGADMIN"}
-)
+PRIVILEGED_ROLES = frozenset({"ACCOUNTADMIN", "SECURITYADMIN", "SYSADMIN", "USERADMIN", "ORGADMIN"})
 
 
 @dataclass(frozen=True)
@@ -30,7 +28,11 @@ class TableSpec:
 
 
 _TABLE_SPECS: tuple[TableSpec, ...] = (
-    TableSpec("users", "Users", ("name", "login_name", "default_role", "disabled", "has_mfa", "last_success_login")),
+    TableSpec(
+        "users",
+        "Users",
+        ("name", "login_name", "default_role", "disabled", "has_mfa", "last_success_login"),
+    ),
     TableSpec("roles", "Roles", ("name", "owner", "comment", "is_default")),
     TableSpec(
         "warehouses",
@@ -51,7 +53,9 @@ _TABLE_SPECS: tuple[TableSpec, ...] = (
 )
 
 
-def collect_snowflake_inventory(connection: Any) -> tuple[dict[str, list[dict[str, Any]]], list[str]]:
+def collect_snowflake_inventory(
+    connection: Any,
+) -> tuple[dict[str, list[dict[str, Any]]], list[str]]:
     inventory: dict[str, list[dict[str, Any]]] = {category: [] for category in CATEGORIES}
     errors: list[str] = []
 
@@ -349,8 +353,12 @@ def write_inventory_files(
     text_path = output_dir / f"{base_name}-inventory.log"
     html_path = output_dir / f"{base_name}-inventory.html"
     json_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-    text_path.write_text(render_inventory_report(metadata, inventory, errors=errors), encoding="utf-8")
-    html_path.write_text(render_inventory_html(metadata, inventory, errors=errors), encoding="utf-8")
+    text_path.write_text(
+        render_inventory_report(metadata, inventory, errors=errors), encoding="utf-8"
+    )
+    html_path.write_text(
+        render_inventory_html(metadata, inventory, errors=errors), encoding="utf-8"
+    )
     return {
         "inventory_json": json_path,
         "inventory_text": text_path,
@@ -376,7 +384,11 @@ def render_inventory_report(
         rows = inventory.get(spec.category, []) or []
         lines.append(f"{spec.title}: {len(rows)}")
         for row in rows:
-            values = [f"{column}={row.get(column)}" for column in spec.columns if row.get(column) is not None]
+            values = [
+                f"{column}={row.get(column)}"
+                for column in spec.columns
+                if row.get(column) is not None
+            ]
             lines.append(f"  - {row.get('name') or row.get('id')}: {', '.join(values)}")
         lines.append("")
     if errors:

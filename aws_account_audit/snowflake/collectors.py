@@ -218,8 +218,7 @@ def findings_for_integrations(integrations: list[dict[str, Any]]) -> list[Findin
     enabled_security = [
         item
         for item in integrations
-        if str(item.get("category") or "").upper() == "SECURITY"
-        and _truthy(item.get("enabled"))
+        if str(item.get("category") or "").upper() == "SECURITY" and _truthy(item.get("enabled"))
     ]
     if not enabled_security:
         findings.append(
