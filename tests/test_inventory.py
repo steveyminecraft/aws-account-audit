@@ -109,6 +109,21 @@ def _inventory() -> dict[str, list[dict]]:
             }
         ],
         "dynamodb_tables": [{"name": "sessions", "region": "eu-west-1"}],
+        "kms_keys": [
+            {
+                "id": "key-1",
+                "arn": "arn:aws:kms:eu-west-1:123456789012:key/key-1",
+                "alias": "alias/app",
+                "key_manager": "CUSTOMER",
+                "key_state": "Enabled",
+                "key_usage": "ENCRYPT_DECRYPT",
+                "key_spec": "SYMMETRIC_DEFAULT",
+                "rotation_enabled": True,
+                "creation_date": "2025-01-01T00:00:00+00:00",
+                "last_used_at": "2025-06-01T12:00:00+00:00",
+                "region": "eu-west-1",
+            }
+        ],
         "waf_web_acls": [
             {
                 "name": "web-acl",
@@ -128,7 +143,7 @@ class TestInventoryToDict(unittest.TestCase):
         payload = inv.inventory_to_dict({"account_id": "123"}, _inventory())
         self.assertIn("inventory", payload)
         self.assertIn("summary", payload)
-        self.assertEqual(payload["summary"]["resource_count"], 11)
+        self.assertEqual(payload["summary"]["resource_count"], 12)
 
 
 class TestRenderInventoryText(unittest.TestCase):
@@ -153,6 +168,7 @@ class TestRenderInventoryText(unittest.TestCase):
         self.assertIn("aurora-prod", self.text)
         self.assertIn("web-acl", self.text)
         self.assertIn("EventBridge", self.text)
+        self.assertIn("alias/app", self.text)
 
 
 class TestRenderInventoryHtml(unittest.TestCase):
@@ -252,6 +268,7 @@ class TestBuildInventoryGraph(unittest.TestCase):
         self.assertEqual(nodes["eventbridge_rule:default:nightly"]["kind"], "eventbridge_rule")
         self.assertEqual(nodes["s3_bucket:my-bucket"]["kind"], "s3_bucket")
         self.assertEqual(nodes["dynamodb_table:sessions"]["kind"], "dynamodb_table")
+        self.assertEqual(nodes["kms_key:key-1"]["kind"], "kms_key")
         self.assertEqual(nodes["waf_web_acl:REGIONAL:abc123"]["kind"], "waf_web_acl")
 
     def test_labels_carry_type_size_version(self) -> None:

@@ -16,6 +16,7 @@ from aws_account_audit.collectors import (
     collect_regional_network,
     collect_regional_serverless,
     collect_regional_storage,
+    collect_regional_kms,
     collect_security_services,
     collect_tagged_resources,
 )
@@ -39,6 +40,7 @@ REGIONAL_COLLECTORS: list[tuple[str, Callable[..., SectionResult]]] = [
     ("network", collect_regional_network),
     ("serverless", collect_regional_serverless),
     ("storage", collect_regional_storage),
+    ("kms", collect_regional_kms),
 ]
 
 

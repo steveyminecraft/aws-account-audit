@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from aws_account_audit.models import Finding, SectionResult
+from aws_account_audit.kms import collect_regional_kms_inventory, kms_findings_for_key
 from aws_account_audit.session import client, get_bucket_policy_status, safe_call
 
 
@@ -581,6 +582,33 @@ def collect_global_storage(session: Any, region: str) -> SectionResult:
     result.data = {
         "count": len(bucket_details),
         "buckets": bucket_details,
+    }
+    return result
+
+
+def collect_regional_kms(session: Any, region: str) -> SectionResult:
+    result = SectionResult(name=f"resources:kms:{region}", status="ok")
+
+    keys, collect_errors = collect_regional_kms_inventory(session, region)
+    for error in collect_errors:
+        result.errors.append(error)
+
+    for key in keys:
+        for severity, category, title, detail, resource_arn in kms_findings_for_key(key):
+            result.findings.append(
+                Finding(
+                    severity=severity,
+                    category=category,
+                    title=title,
+                    detail=detail,
+                    resource_arn=resource_arn,
+                )
+            )
+
+    result.data = {
+        "region": region,
+        "count": len(keys),
+        "kms_keys": keys,
     }
     return result
 

@@ -18,6 +18,7 @@ Read-only Python tool that inventories AWS account resources and produces a secu
 - VPCs, subnets, NAT gateways, load balancers
 - Lambda functions and ECS clusters
 - RDS instances and DynamoDB tables
+- KMS keys (metadata, rotation status, last-used via CloudTrail)
 - S3 buckets (global), Route53 hosted zones, CloudFormation stacks
 
 Per-resource detail captured for the inventory listing (location, size, type, version as applicable):
@@ -34,6 +35,7 @@ Per-resource detail captured for the inventory listing (location, size, type, ve
 | EventBridge rule | Region | target count | schedule or event pattern | state |
 | S3 bucket | Region | — | — | — |
 | DynamoDB table | Region | — | — | — |
+| KMS key | Region | — | symmetric / asymmetric spec | key usage |
 | WAF Web ACL | Region or global (CloudFront) | rule count | REGIONAL / CLOUDFRONT scope | default action (Allow/Block) |
 
 **Findings**
@@ -42,6 +44,7 @@ Per-resource detail captured for the inventory listing (location, size, type, ve
 - Public S3 buckets, missing bucket public access blocks
 - Public RDS instances, open security group rules
 - CloudTrail gaps
+- Customer managed KMS keys without rotation, or pending deletion
 
 ## Setup
 
@@ -99,6 +102,8 @@ Disable inventory with `--no-inventory`.
 The tool is read-only. Effective access depends on the caller's IAM permissions. For broad inventory coverage, use a role with read access such as `ReadOnlyAccess` plus:
 
 - `resourcegroupstagging:GetResources`
+- `kms:ListKeys`, `kms:DescribeKey`, `kms:ListAliases`, `kms:GetKeyRotationStatus`
+- `cloudtrail:LookupEvents` (optional; enriches KMS last-used timestamps from the last 90 days)
 - `organizations:DescribeOrganization` / `organizations:ListAccounts` (optional)
 - `iam:GenerateCredentialReport` / `iam:GetCredentialReport` (optional)
 
