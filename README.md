@@ -80,6 +80,50 @@ python -m aws_account_audit --profile my-profile --stdout
 python -m aws_account_audit --profile my-profile --no-inventory
 ```
 
+## Snowflake audit
+
+Read-only Snowflake account audit with inventory tables and security findings. Uses
+`snowflake-connector-python` (optional extra).
+
+```bash
+pip install -e '.[snowflake]'
+
+export SNOWFLAKE_ACCOUNT=xy12345
+export SNOWFLAKE_USER=AUDITOR
+export SNOWFLAKE_PASSWORD='...'   # or SNOWFLAKE_PRIVATE_KEY_PATH + SNOWFLAKE_AUTHENTICATOR
+
+python -m aws_account_audit.snowflake \
+  --role SECURITYADMIN \
+  --warehouse AUDIT_WH \
+  --output-dir ./snowflake-check-runs
+```
+
+**What it collects**
+
+- Account context (current account, user, role, warehouse)
+- Users, roles, warehouses, databases, network policies, security integrations
+- Role grants to users (from `ACCOUNT_USAGE`, with `SHOW` fallbacks)
+
+**Findings**
+
+- Privileged role grants (`ACCOUNTADMIN`, `SECURITYADMIN`, etc.)
+- Users with privileged default roles
+- Password users without MFA
+- Warehouses without auto-suspend
+- Missing network policies
+- No enabled security integrations (SSO/SCIM)
+
+**Output** (under `snowflake-check-runs/account-<account>/`)
+
+- `snowflake-view.html` — artifact index with severity badges
+- `findings.html` — dedicated security findings page
+- `snowflake-check-summary.json` — paths to generated artifacts
+- `audit-runs/snowflake-<account>-<timestamp>.json` — structured audit data
+- `audit-runs/snowflake-<account>-<timestamp>-inventory.html` — interactive inventory tables
+
+Recommended Snowflake privileges: `IMPORTED PRIVILEGES` on `SNOWFLAKE` database (for
+`ACCOUNT_USAGE` views) or equivalent read access via `SECURITYADMIN` / custom auditor role.
+
 ## Output
 
 Reports are written to `--output-dir` (default: `./audit-runs`):
