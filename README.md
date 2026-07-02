@@ -88,14 +88,18 @@ Read-only Snowflake account audit with inventory tables and security findings. U
 ```bash
 pip install -e '.[snowflake]'
 
-export SNOWFLAKE_ACCOUNT=xy12345
-export SNOWFLAKE_USER=AUDITOR
-export SNOWFLAKE_PASSWORD='...'   # or SNOWFLAKE_PRIVATE_KEY_PATH + SNOWFLAKE_AUTHENTICATOR
+# Browser SSO + MFA (matches most Snowflake UI logins)
+unset SNOWFLAKE_PASSWORD
+export SNOWFLAKE_AUTHENTICATOR=externalbrowser
+python -m aws_account_audit.snowflake --connection <name>
 
-python -m aws_account_audit.snowflake \
-  --role SECURITYADMIN \
-  --warehouse AUDIT_WH \
-  --output-dir ./snowflake-check-runs
+# Or use your ~/.snowflake/connections.toml default connection
+python -m aws_account_audit.snowflake --show-config
+
+# Native Snowflake password + MFA (not browser SSO)
+export SNOWFLAKE_AUTHENTICATOR=username_password_mfa
+export SNOWFLAKE_PASSCODE=123456
+python -m aws_account_audit.snowflake --account org-account --user YOU --password '...'
 ```
 
 **What it collects**
